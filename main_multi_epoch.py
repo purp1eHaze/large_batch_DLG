@@ -196,7 +196,7 @@ if __name__ == '__main__':
     x_avg = dummy_data.clone().detach()
     y_avg = dummy_label.clone().detach()
 
-    for iters in range(30000):
+    for iters in range(300):
     
         x_collection = []
         y_collection = []
@@ -250,7 +250,7 @@ if __name__ == '__main__':
         x_avg = avg(x_collection)
         y_avg = avg(y_collection)   
     
-        if iters % 1000 == 0: 
+        if iters % 10 == 0: 
             #rec_mse = MSE(gt_data.cpu().detach().numpy(), dummy_data.cpu().detach().numpy())
             print(iters, "gradloss: %.4f"  % avg_loss)
             history.append(dummy_data.cpu())
