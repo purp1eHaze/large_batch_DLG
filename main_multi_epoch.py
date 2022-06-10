@@ -16,11 +16,8 @@ from utils.training import local_update, test, accuracy, fed_avg
 from skimage.exposure import rescale_intensity
 
 from utils.args import parser_args
-print(torch.__version__, torchvision.__version__)
-
 from utils.datasets import get_data
 from utils.sampling import label_to_onehot, cross_entropy_for_onehot
-
 
 def MSE(A, B):
     A = rescale_intensity(1.0 * A, out_range=(0, 1))
@@ -263,3 +260,14 @@ if __name__ == '__main__':
         
             img_save = tt(img[j])    
             img_save.save("assets/"+str(j)+"/"+str(i)+".jpg")
+
+
+    for j in range(bs):
+        plt.figure(figsize=(12, 8))
+        for i in range(int(args.epoch / 100)):
+            plt.subplot(int(args.epoch / 1000), 10, i + 1)
+            plt.imshow(history[bs * i + j])
+            plt.title("iter=%d" % (i * 100))
+            plt.axis('off')
+        plt.savefig('imgs/' + str(j) + '.png')
+        plt.close()
