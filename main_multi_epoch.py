@@ -2,6 +2,7 @@
 import argparse
 import numpy as np
 from PIL import Image
+import matplotlib.pyplot as plt
 import torch
 import copy
 import os
@@ -14,7 +15,7 @@ from torch.utils.data import DataLoader
 from utils.training import local_update, test, accuracy, fed_avg
 
 from skimage.exposure import rescale_intensity
-
+from models.vision import LeNet, AlexNet, ResNet18, weights_init
 from utils.args import parser_args
 from utils.datasets import get_data
 from utils.sampling import label_to_onehot, cross_entropy_for_onehot
@@ -117,8 +118,6 @@ def Deepleakage(net, gt_data, gt_onehot_label, res_x, res_y):
     
     return copy.deepcopy(optimizer.state_dict()), grad_diff
     
-    # print(dummy_data.shape)
-    # exit()
 
 def avg(x_collection):
 
@@ -137,34 +136,47 @@ if __name__ == '__main__':
     if torch.cuda.is_available():
         device = "cuda"
         print("Running on %s" % device)
+    
+    # prepare dataset
+    if args.dataset == "cifar10":
+        num_classes = 10
+    if args.dataset == "cifar100":
+        num_classes = 100
 
-    dst, test_set, dict_users = get_data(dataset='cifar10',
-                                                    data_root = "/home/lbw/Data",
+    dst, test_set, dict_users = get_data(dataset=args.dataset,
+                                                    data_root = args.data_root,
                                                     iid = True,
                                                     num_users = 10)
+    local_train_ldr = DataLoader(dst, batch_size = 16, shuffle=False, num_workers=2)
+    
+    # prepare model 
+    if args.model == "lenet":
+        net = LeNet().to(device)
+    if args.model == "alexnet":
+        net = AlexNet(num_classes=num_classes).to(device)
+    if args.model == "resnet":
+        net = ResNet18(num_classes=num_classes).to(device)
 
-    from models.vision import LeNet, weights_init
-    net = LeNet().to(device)
-    torch.manual_seed(1234)
-    net.apply(weights_init)
+    # torch.manual_seed(1234)
+    # net.apply(weights_init)
 
-    local_train_ldr = DataLoader(dst, batch_size = args.batch_size, shuffle=False, num_workers=2)
+    # train and save model in different epoch    
+    # if not os.path.exists("model_time/"+args.model+"/"+args.dataset):
+    #     os.makedirs("model_time/"+args.model+"/"+args.dataset)
+    # for i in range(100):  
+    #     local_update(local_train_ldr, net, args.lr)
+    #     checkpoint={'epoch': i,
+	# 		'model': net.state_dict()}
+    #     torch.save(checkpoint, "model_time/"+args.model+"/"+args.dataset+"/"+ 'model_'+str(i)+'.pth')
+
     img_index = args.index
 
     # make image folder
-    for j in range(3):
-        data_path = os.path.join('assets', str(j)) 
-        if not os.path.exists(data_path): 
-            os.makedirs(data_path) 
-
-    model_time = []
-    # save model in different epoch
-    for i in range(1):  
-        local_update(local_train_ldr, net, args.lr)
-        if i % 1 == 0:
-            model_time.append(net.state_dict())
-            #model_time.append(net.state_dict())
-
+    for j in range(args.batch_size):
+        img_path = os.path.join('assets', str(j)) 
+        if not os.path.exists(img_path): 
+            os.makedirs(img_path) 
+   
     # load image and label 
     tp = transforms.ToTensor()
     tt = transforms.ToPILImage()
@@ -175,10 +187,10 @@ if __name__ == '__main__':
     data_size = gt_data.size()
     gt_data = gt_data.view(1, *data_size)
 
-    # batch_selection
-    for i in range(1):
-        gt_data = torch.cat([gt_data, dst[img_index+i][0].view(1, *data_size).to(device)], dim=0)
-        gt_label = torch.cat([gt_label, torch.Tensor([dst[img_index+i][1]]).long().view(1, ).to(device)], dim=0)
+    # batch selection to be attacked
+    for i in range(args.batch_size):
+        gt_data = torch.cat([gt_data, dst[img_index+i+1][0].view(1, *data_size).to(device)], dim=0)
+        gt_label = torch.cat([gt_label, torch.Tensor([dst[img_index+i+1][1]]).long().view(1, ).to(device)], dim=0)
 
     gt_onehot_label = label_to_onehot(gt_label, num_classes= 10)
 
@@ -193,7 +205,13 @@ if __name__ == '__main__':
     x_avg = dummy_data.clone().detach()
     y_avg = dummy_label.clone().detach()
 
-    for iters in range(300):
+    model_time = []
+    dir = "model_time/"+args.model+"/"+args.dataset+"/"
+    for i in range(100):
+        model_dict = torch.load(dir+ "model_"+str(i)+".pth")['model']
+        model_time.append(model_dict)
+
+    for iters in range(args.epochs):
     
         x_collection = []
         y_collection = []
@@ -209,7 +227,9 @@ if __name__ == '__main__':
             # load data
             dummy_data = x_avg.requires_grad_(True)
             dummy_label = y_avg.requires_grad_(True)
-            optimizer = torch.optim.LBFGS([dummy_data, dummy_label], lr = 1)
+
+            # set optimizer for deep leakage
+            optimizer = torch.optim.LBFGS([dummy_data, dummy_label], lr = args.lr)
 
             pred = net(gt_data)
             y = criterion(pred, gt_onehot_label)
@@ -237,8 +257,6 @@ if __name__ == '__main__':
             y_collection.append(dummy_label.detach())
             loss.append(closure().item())
 
-
-
         avg_loss = 0 
         for i in range(len(loss)):
             avg_loss += loss[i]
@@ -247,22 +265,22 @@ if __name__ == '__main__':
         x_avg = avg(x_collection)
         y_avg = avg(y_collection)   
     
-        if iters % 10 == 0: 
+        if iters % args.epoch_interval == 0: 
             #rec_mse = MSE(gt_data.cpu().detach().numpy(), dummy_data.cpu().detach().numpy())
             print(iters, "gradloss: %.4f"  % avg_loss)
             history.append(dummy_data.cpu())
 
-
+    # save image
     for i in range(len(history)):
         img = history[i]
         # img = Image.open(history[i])
         for j in range(img.size(0)):
-        
+
             img_save = tt(img[j])    
             img_save.save("assets/"+str(j)+"/"+str(i)+".jpg")
 
 
-    for j in range(bs):
+    for j in range(len(history)):
         plt.figure(figsize=(12, 8))
         for i in range(int(args.epoch / 100)):
             plt.subplot(int(args.epoch / 1000), 10, i + 1)
