@@ -39,85 +39,6 @@ def TVloss(x):
     return 2 * (h_tv / count_h + w_tv / count_w) / batch_size
 
 
-def Deepleakage(net, gt_data, gt_onehot_label, res_x, res_y):
-
-    # print(gt_onehot_label)
-        # generate dummy data and label
-    dummy_data = torch.randn(gt_data.size()).to(device).requires_grad_(True)
-    dummy_label = torch.randn(gt_onehot_label.size()).to(device).requires_grad_(True)
-
-    dummy_data = res_x.requires_grad_(True)
-    dummy_label = res_y.requires_grad_(True)
-
-    # compute original gradient 
-    pred = net(gt_data)
-    y = criterion(pred, gt_onehot_label)
-
-    dy_dx = torch.autograd.grad(y, net.parameters())
-    original_dy_dx = list((_.detach().clone() for _ in dy_dx))
-
-    optimizer = torch.optim.LBFGS([dummy_data, dummy_label], lr = 0.1)
-
-    for iters in range(300):
-
-        optimizer.zero_grad()
-        dummy_pred = net(dummy_data) 
-        dummy_onehot_label = F.softmax(dummy_label, dim=-1)
-        dummy_loss = criterion(dummy_pred, dummy_onehot_label) 
-        dummy_dy_dx = torch.autograd.grad(dummy_loss, net.parameters(), create_graph=True)
-        grad_diff = 0
-        for gx, gy in zip(dummy_dy_dx, original_dy_dx): 
-            grad_diff += ((gx - gy) ** 2).sum()
-        grad_diff.backward()
-        
-
-        print(optimizer.param_groups[0]['params'][0].shape)
-        print(optimizer.param_groups[0]['params'][1].shape)
-        print(optimizer.param_groups[0]['params'][1])
-        print(dummy_label.grad)
-        print(optimizer.param_groups[0]['params'][1].grad)
-        exit()
-
-
-    optimizer.zero_grad()
-
-    dummy_pred = net(dummy_data) 
-    a = copy.deepcopy(dummy_data)
-    dummy_onehot_label = F.softmax(dummy_label, dim=-1)
-    dummy_loss = criterion(dummy_pred, dummy_onehot_label) 
-    dummy_dy_dx = torch.autograd.grad(dummy_loss, net.parameters(), create_graph=True)
-
-    grad_diff = 0
-    for gx, gy in zip(dummy_dy_dx, original_dy_dx): 
-        grad_diff += ((gx - gy) ** 2).sum()
-    
-    grad_diff.backward()
-    
-    optimizer.step()
-    b = copy.deepcopy(dummy_data)
-    print(a ==b)
-
-    print(optimizer.param_groups[0]['params'][0].shape)
-    print(optimizer.param_groups[0]['params'][1].shape)
-    print(optimizer.param_groups[0]['params'][1])
-    print(dummy_label.grad)
-    print(optimizer.param_groups[0]['params'][0].grad)
-    exit()
-    for group in optimizer.param_groups:
-        weight_decay = group['weight_decay']
-        momentum = group['momentum']
-        dampening = group['dampening']
-        nesterov = group['nesterov']
-
-        for p in group['params']:
-            if p.grad is None:
-                continue
-            d_p = p.grad.data
-        print(d_p)
-        exit()
-    
-    return copy.deepcopy(optimizer.state_dict()), grad_diff
-    
 
 def avg(x_collection):
 
@@ -132,6 +53,7 @@ def avg(x_collection):
 if __name__ == '__main__':
 
     args = parser_args()
+    tt = transforms.ToPILImage()
     device = "cpu"
     if torch.cuda.is_available():
         device = "cuda"
@@ -157,9 +79,8 @@ if __name__ == '__main__':
     if args.model == "resnet":
         net = ResNet18(num_classes=num_classes).to(device)
 
-    # torch.manual_seed(1234)
-    # net.apply(weights_init)
-
+    ##torch.manual_seed(1234)
+    ##net.apply(weights_init)
     # train and save model in different epoch    
     # if not os.path.exists("model_time/"+args.model+"/"+args.dataset):
     #     os.makedirs("model_time/"+args.model+"/"+args.dataset)
@@ -188,7 +109,7 @@ if __name__ == '__main__':
     gt_data = gt_data.view(1, *data_size)
 
     # batch selection to be attacked
-    for i in range(args.batch_size):
+    for i in range(args.batch_size-1):
         gt_data = torch.cat([gt_data, dst[img_index+i+1][0].view(1, *data_size).to(device)], dim=0)
         gt_label = torch.cat([gt_label, torch.Tensor([dst[img_index+i+1][1]]).long().view(1, ).to(device)], dim=0)
 
@@ -206,12 +127,13 @@ if __name__ == '__main__':
     y_avg = dummy_label.clone().detach()
 
     model_time = []
-    dir = "model_time/"+args.model+"/"+args.dataset+"/"
-    for i in range(100):
+    dir = "/home/lbw/Code/model_time/"+args.model+"/"+args.dataset+"/"
+
+    for i in range(10):
         model_dict = torch.load(dir+ "model_"+str(i)+".pth")['model']
         model_time.append(model_dict)
 
-    for iters in range(args.epochs):
+    for iters in range(args.epochs): # default =300
     
         x_collection = []
         y_collection = []
@@ -223,14 +145,12 @@ if __name__ == '__main__':
 
             # load model 
             net.load_state_dict(model_time[i]) 
-              
             # load data
             dummy_data = x_avg.requires_grad_(True)
             dummy_label = y_avg.requires_grad_(True)
 
             # set optimizer for deep leakage
             optimizer = torch.optim.LBFGS([dummy_data, dummy_label], lr = args.lr)
-
             pred = net(gt_data)
             y = criterion(pred, gt_onehot_label)
             dy_dx = torch.autograd.grad(y, net.parameters())
@@ -261,31 +181,28 @@ if __name__ == '__main__':
         for i in range(len(loss)):
             avg_loss += loss[i]
         avg_loss /= len(loss)
-        
+    
         x_avg = avg(x_collection)
         y_avg = avg(y_collection)   
     
-        if iters % args.epoch_interval == 0: 
+        if (iters+1) % args.epoch_interval == 0:  #default = 10
             #rec_mse = MSE(gt_data.cpu().detach().numpy(), dummy_data.cpu().detach().numpy())
             print(iters, "gradloss: %.4f"  % avg_loss)
             history.append(dummy_data.cpu())
 
+    subimage_size = int(args.epochs/args.epoch_interval)
+    
     # save image
-    for i in range(len(history)):
-        img = history[i]
-        # img = Image.open(history[i])
-        for j in range(img.size(0)):
+    for i in range(args.batch_size):
+        plt.figure(figsize=(120, 80))
+        for j in range(subimage_size): # default = 30            
+            plt.subplot(int(subimage_size/10), 10, j+1)
+            plt.imshow(tt(history[j][i]))
+            # plt.title("iter=%d" % (i * 100))
+            # plt.axis('off')      
+        plt.savefig("assets/"+str(i)+"/"+"rec.jpg")
+        plt.close()         
+        
 
-            img_save = tt(img[j])    
-            img_save.save("assets/"+str(j)+"/"+str(i)+".jpg")
 
 
-    for j in range(len(history)):
-        plt.figure(figsize=(12, 8))
-        for i in range(int(args.epoch / 100)):
-            plt.subplot(int(args.epoch / 1000), 10, i + 1)
-            plt.imshow(history[bs * i + j])
-            plt.title("iter=%d" % (i * 100))
-            plt.axis('off')
-        plt.savefig('imgs/' + str(j) + '.png')
-        plt.close()

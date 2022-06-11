@@ -5,7 +5,7 @@ from torch.autograd import grad
 import torchvision
 from torchvision import models, datasets, transforms
 from models.layers.conv2d import ConvBlock
-from models.layers.passportconv2d_private import PassportPrivateBlock
+
 
 
 def weights_init(m):

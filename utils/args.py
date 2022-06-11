@@ -25,16 +25,6 @@ def parser_args():
     parser.add_argument('--lr', type=float, default= 1,
                         help="learning rate for dlg")
 
-    parser.add_argument('--iid', action='store_true', default =True,
-                        help='dataset iid or not')
-
-    parser.add_argument('--optim', type=str, default='sgd',
-                        help='optimizer: [sgd, adam]')
-
-    parser.add_argument('--sampling_type', choices=['poisson', 'uniform'],
-                         default='uniform', type=str,
-                         help='which kind of client sampling we use') 
-    
     # ============================ Model arguments ===================================
     parser.add_argument('--model', type=str, default='alexnet', choices=['alexnet', 'resnet', 'lenet'],
                         help='model architecture name')
@@ -48,18 +38,19 @@ def parser_args():
 
     # =========================== Other parameters ===================================
     parser.add_argument('--gpu', default='1', type=str)
-    
-    parser.add_argument('--log_interval', default=1, type=int,
-                        help='interval for evaluating loss and accuracy')
-    # misc
-    parser.add_argument('--save-interval', type=int, default=0,
-                        help='save model interval')
-
-    parser.add_argument('--wd', type=float, default=4e-5,
-                        help='weight decay')
 
     parser.add_argument('--exp-id', type=int, default=1,
                         help='experiment id')
+
+    parser.add_argument('--iid', action='store_true', default =True,
+                        help='dataset iid or not')
+
+    parser.add_argument('--optim', type=str, default='sgd',
+                        help='optimizer: [sgd, adam]')
+
+    parser.add_argument('--sampling_type', choices=['poisson', 'uniform'],
+                         default='uniform', type=str,
+                         help='which kind of sampling we use') 
 
     # =========================== DP ===================================
     parser.add_argument('--dp', action='store_true', default=False,
