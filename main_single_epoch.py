@@ -88,7 +88,6 @@ if __name__ == '__main__':
     if args.model == "resnet":
         net = ResNet18(num_classes=num_classes).to(device)
 
-
     img_index = args.index
 
     # make image folder
@@ -128,13 +127,10 @@ if __name__ == '__main__':
     model_time = []
     dir = "/home/lbw/Code/model_time/"+args.model+"/"+args.dataset+"/"
 
-    for i in range(10, 15, 1):
-        model_dict = torch.load(dir+ "model_"+str(i)+".pth")['model']
-        model_time.append(model_dict)
 
-    # for i in range(10):  
-    #     local_update(local_train_ldr, net, 0.1)
-    #     model_time.append(net.state_dict())
+    for i in range(1):  
+        local_update(local_train_ldr, net, 0.1)
+        model_time.append(net.state_dict())
   
     for iters in range(args.epochs): # default =300
     
@@ -205,6 +201,3 @@ if __name__ == '__main__':
         plt.savefig("assets/"+str(i)+"/"+"rec.jpg")
         plt.close()         
         
-
-
-
