@@ -101,6 +101,8 @@ if __name__ == '__main__':
     tp = transforms.ToTensor()
     tt = transforms.ToPILImage()
     criterion = cross_entropy_for_onehot
+   
+
     gt_data = dst[img_index][0].to(device) # 0 for label, 1 for label
     gt_label = torch.Tensor([dst[img_index][1]]).long().to(device)
     gt_label = gt_label.view(1, )
@@ -128,13 +130,13 @@ if __name__ == '__main__':
     model_time = []
     dir = "/home/lbw/Code/model_time/"+args.model+"/"+args.dataset+"/"
 
-    for i in range(10, 15, 1):
-        model_dict = torch.load(dir+ "model_"+str(i)+".pth")['model']
-        model_time.append(model_dict)
+    # for i in range(1, 40, 1):
+    #     model_dict = torch.load(dir+ "model_"+str(i)+".pth")['model']
+    #     model_time.append(model_dict)
 
-    # for i in range(10):  
-    #     local_update(local_train_ldr, net, 0.1)
-    #     model_time.append(net.state_dict())
+    for i in range(10):  
+        local_update(local_train_ldr, net, 0.1)
+        model_time.append(net.state_dict())
   
     for iters in range(args.epochs): # default =300
     
@@ -145,6 +147,8 @@ if __name__ == '__main__':
         loss = []
             
         for i in range(len(model_time)):
+            
+            #print("1")
 
             # load model 
             net.load_state_dict(model_time[i]) 

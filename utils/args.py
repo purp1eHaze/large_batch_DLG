@@ -29,7 +29,7 @@ def parser_args():
     parser.add_argument('--model', type=str, default='alexnet', choices=['alexnet', 'resnet', 'lenet'],
                         help='model architecture name')
     
-    parser.add_argument('--dataset', type=str, default='cifar10', choices=['cifar10', 'cifar100'], help="name of dataset")
+    parser.add_argument('--dataset', type=str, default='cifar10', choices=['cifar10', 'cifar100', 'imagenet'], help="name of dataset")
 
     parser.add_argument('--num_classes', default=10, type=int)
     

@@ -5,7 +5,7 @@ import torch
 import torchvision
 import torchvision.transforms as transforms
 from torch.utils.data import Dataset, DataLoader
-
+import torchvision.datasets as datasets
 from utils.sampling import *
 from collections import defaultdict
 from torchvision.datasets.folder import pil_loader, make_dataset, IMG_EXTENSIONS
@@ -72,11 +72,25 @@ def get_data(dataset, data_root, iid, num_users):
                                                 download=False,
                                                 transform=transform_test
                                                 )
+
+    if ds == "imagenet":
+        root = '/home/lbw/Data/'
+        def get_imagenet(root, train = True, transform = None, target_transform = None):
+            if train:
+                root = os.path.join(data_root, 'ILSVRC2012/train')
+            else:
+                root = os.path.join(data_root, 'ILSVRC2012/val')
+            return datasets.ImageFolder(root = root,
+                                    transform = transform,
+                                    target_transform = target_transform)
+        transform = transforms.Compose([ transforms.ToTensor()])
+
+        train_set = get_imagenet(root=root, train=True, transform = transform) #, target_transform= None)
+        test_set = get_imagenet(root=root, train=False, transform = transform) #, target_transform= None)                                            
     
     if iid:
         dict_users = cifar_iid(train_set, num_users)
  
-
     return train_set, test_set, dict_users
 
 class DatasetSplit(Dataset):

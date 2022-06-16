@@ -1,1 +1,1 @@
-python main_multi_epoch.py --data_root "/home/lbw/Data"  --dataset 'cifar10' --model "lenet" --batch_size 3 --lr 1
+python main_multi_epoch.py --data_root "/home/lbw/Data"  --dataset 'imagenet' --model "lenet" --batch_size 8 --lr 1
