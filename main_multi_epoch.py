@@ -69,25 +69,30 @@ if __name__ == '__main__':
         print("Running on %s" % device)
     
     # prepare dataset
+    if args.dataset == "imagenet":
+        num_classes = 10
+        input_size = 224
     if args.dataset == "cifar10":
         num_classes = 10
+        input_size = 32
     if args.dataset == "cifar100":
         num_classes = 100
-
+        input_size = 32
+    
     dst, test_set, dict_users = get_data(dataset=args.dataset,
                                                     data_root = args.data_root,
                                                     iid = True,
                                                     num_users = 10)
-    local_train_ldr = DataLoader(dst, batch_size = 16, shuffle=False, num_workers=2)
+    local_train_ldr = DataLoader(dst, batch_size = 64, shuffle=False, num_workers=2)
+    test_ldr = DataLoader(test_set, batch_size = 64, shuffle=False, num_workers=2)
     
     # prepare model 
     if args.model == "lenet":
-        net = LeNet().to(device)
+        net = LeNet(input_size=input_size).to(device)
     if args.model == "alexnet":
-        net = AlexNet(num_classes=num_classes).to(device)
+        net = AlexNet(num_classes=num_classes, input_size = input_size).to(device)
     if args.model == "resnet":
-        net = ResNet18(num_classes=num_classes).to(device)
-
+        net = ResNet18(num_classes=num_classes, input_size=input_size).to(device)
 
     img_index = args.index
 
@@ -96,18 +101,31 @@ if __name__ == '__main__':
         img_path = os.path.join('assets', str(j)) 
         if not os.path.exists(img_path): 
             os.makedirs(img_path) 
-   
+    
+
     # load image and label 
     tp = transforms.ToTensor()
     tt = transforms.ToPILImage()
     criterion = cross_entropy_for_onehot
-   
 
     gt_data = dst[img_index][0].to(device) # 0 for label, 1 for label
     gt_label = torch.Tensor([dst[img_index][1]]).long().to(device)
     gt_label = gt_label.view(1, )
     data_size = gt_data.size()
     gt_data = gt_data.view(1, *data_size)
+    
+    # print(gt_data.shape)
+    # print(dst[img_index][0].view(1, *data_size).shape)
+    # print(dst[img_index][0].shape)
+    # print(dst[img_index+1][0].shape)
+    # print(dst[img_index+2][0].shape)
+    # print(dst[img_index+3][0].shape)
+    # print(dst[img_index+4][0].shape)
+    # plt.figure(figsize=(30, 20))
+    # plt.imshow(tt(dst[img_index+4][0])) 
+    # plt.savefig("test.jpg")
+    # plt.close()    
+    # exit()
 
     # batch selection to be attacked
     for i in range(args.batch_size-1):
@@ -136,6 +154,10 @@ if __name__ == '__main__':
 
     for i in range(10):  
         local_update(local_train_ldr, net, 0.1)
+        loss, acc = test(net, local_train_ldr)
+        print("training loss: %.4f"  % loss)
+        print("training acc: %.3f"  % acc)
+
         model_time.append(net.state_dict())
   
     for iters in range(args.epochs): # default =300

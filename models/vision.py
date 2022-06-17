@@ -1,3 +1,4 @@
+from email.mime import image
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -16,7 +17,7 @@ def weights_init(m):
 
 
 class LeNet(nn.Module):
-    def __init__(self):
+    def __init__(self, input_size = 32):
         super(LeNet, self).__init__()
         act = nn.Sigmoid
         self.body = nn.Sequential(
@@ -28,23 +29,64 @@ class LeNet(nn.Module):
             act(),
         )
         self.fc = nn.Sequential(
-            nn.Linear(768, 10)
+            nn.Linear(int(input_size*input_size*3/4), 10) # 768 for cifar
         )
         
     def forward(self, x):
         out = self.body(x)
         out = out.view(out.size(0), -1)
-        # print(out.size())
+
+        # print(out.shape)
+        # exit()
         out = self.fc(out)
         return out
 
-'''ResNet in PyTorch.
-For Pre-activation ResNet, see 'preact_resnet.py'.
-'''
+
+
+# class AlexNet(nn.Module):
+#     def __init__(self,num_classes=3, input_size = 32):
+#         super(AlexNet, self).__init__()
+#         self.features=nn.Sequential(
+#             nn.Conv2d(3,48, kernel_size=11, stride=4, padding=2),
+#             nn.ReLU(inplace=True),
+#             nn.MaxPool2d(kernel_size=3,stride=2),
+#             nn.Conv2d(48,128, kernel_size=5, padding=2),
+#             nn.ReLU(inplace=True),
+#             nn.MaxPool2d(kernel_size=3,stride=2),
+#             nn.Conv2d(128,192,kernel_size=3,stride=1,padding=1),
+#             nn.ReLU(inplace=True),
+#             nn.Conv2d(192,192,kernel_size=3,stride=1,padding=1),
+#             nn.ReLU(inplace=True),
+#             nn.Conv2d(192,128,kernel_size=3,stride=1,padding=1),
+#             nn.ReLU(inplace=True),
+#             nn.MaxPool2d(kernel_size=3,stride=2),
+#         )
+
+#         self.classifier=nn.Sequential(
+            
+#             nn.Linear(128 * 6 * 6, 2048),
+#             nn.ReLU(inplace=True),
+#             nn.Dropout(),
+#             nn.Linear(2048, 2048),
+#             nn.ReLU(inplace=True),
+#             nn.Dropout(),
+#             nn.Linear(2048, num_classes),
+#         )
+
+#     def forward(self,x):
+#         #print(x.shape)
+#         x=self.features(x)
+#         x=torch.flatten(x,start_dim=1)
+       
+#         x=self.classifier(x)
+       
+#         return x
+
+
 
 class AlexNet(nn.Module):
 
-    def __init__(self, num_classes):
+    def __init__(self, num_classes, input_size = 32):
         super().__init__()
         maxpoolidx = [1, 3, 7]
         layers = []
@@ -73,7 +115,7 @@ class AlexNet(nn.Module):
                 inp = oups[layeridx]
 
         self.features = nn.Sequential(*layers)
-        self.classifier = nn.Linear(4 * 4 * 256, num_classes)
+        self.classifier = nn.Linear(4 * input_size * input_size, num_classes)
 
     def forward(self, x):
         for m in self.features:

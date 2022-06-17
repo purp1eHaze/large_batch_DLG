@@ -41,10 +41,16 @@ def local_update(train_ldr, model, lr):
     
     if torch.cuda.is_available():
         device = "cuda"
-    optimizer = torch.optim.SGD(model.parameters(), lr, 
-                            momentum=0.9,
-                            weight_decay=0.0005) 
-                                
+    # optimizer = torch.optim.SGD(model.parameters(), lr, 
+    #                         momentum=0.9,
+    #                         weight_decay=0.0005) 
+    optimizer = torch.optim.Adam(model.parameters(),
+                0.001,
+                betas=(0.9, 0.999),
+                eps=1e-08,
+                weight_decay=0,
+                amsgrad=False)
+        
     model.to(device)
     model.train()
     loss_meter = 0
@@ -69,10 +75,12 @@ def local_update(train_ldr, model, lr):
     #         param.data = param.data + torch.normal(torch.zeros(param.size()), self.sigma).to(self.device)
     return model.state_dict(), loss_meter, 
 
-def test(self, dataloader):
+def test(model, dataloader):
 
-    self.model.to(self.device)
-    self.model.eval()
+    if torch.cuda.is_available():
+        device = "cuda"
+    model.to(device)
+    model.eval()
 
     loss_meter = 0
     acc_meter = 0
@@ -81,10 +89,10 @@ def test(self, dataloader):
     with torch.no_grad():
         for load in dataloader:
             data, target = load[:2]
-            data = data.to(self.device)
-            target = target.to(self.device)
+            data = data.to(device)
+            target = target.to(device)
     
-            pred = self.model(data)  # test = 4
+            pred = model(data)  # test = 4
             loss_meter += F.cross_entropy(pred, target, reduction='sum').item() #sum up batch loss
             pred = pred.max(1, keepdim=True)[1] # get the index of the max log-probability
             acc_meter += pred.eq(target.view_as(pred)).sum().item()
