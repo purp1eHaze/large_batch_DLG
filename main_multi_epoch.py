@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader
 from utils.training import local_update, test, accuracy, fed_avg
 
 from skimage.exposure import rescale_intensity
-from models.vision import LeNet, AlexNet, ResNet18, weights_init
+from models.vision import LeNet, AlexNet_Imagenet, AlexNet_Cifar, ResNet18, weights_init
 from utils.args import parser_args
 from utils.datasets import get_data
 from utils.sampling import label_to_onehot, cross_entropy_for_onehot
@@ -90,7 +90,10 @@ if __name__ == '__main__':
     if args.model == "lenet":
         net = LeNet(input_size=input_size).to(device)
     if args.model == "alexnet":
-        net = AlexNet(num_classes=num_classes, input_size = input_size).to(device)
+        if args.dataset == "imagenet":
+            net = AlexNet_Imagenet(num_classes=num_classes, input_size = input_size).to(device)
+        else: 
+            net = AlexNet_Cifar(num_classes=num_classes, input_size = input_size).to(device)
     if args.model == "resnet":
         net = ResNet18(num_classes=num_classes, input_size=input_size).to(device)
 

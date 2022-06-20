@@ -1,0 +1,1 @@
+CUDA_VISIBLE_DEVICES=0 python main_multi_epoch.py --data_root "/home/lbw/Data"  --dataset 'imagenet' --model "alexnet" --batch_size 2 --lr 1

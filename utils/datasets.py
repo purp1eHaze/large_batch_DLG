@@ -105,7 +105,7 @@ def get_data(dataset, data_root, iid, num_users):
             return datasets.ImageFolder(root = root,
                                     transform = transform,
                                     target_transform = target_transform)
-        transform = transforms.Compose([ transforms.ToTensor(), normalize, Resize((3, 224, 224)) ])
+        transform = transforms.Compose([ transforms.ToTensor(),  Resize((3, 224, 224)), normalize ])
 
         train_set = get_imagenet(root=root, train=True, transform = transform) #, target_transform= None)
         test_set = get_imagenet(root=root, train=False, transform = transform) #, target_transform= None) 

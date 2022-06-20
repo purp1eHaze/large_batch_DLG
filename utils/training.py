@@ -43,7 +43,12 @@ def local_update(train_ldr, model, lr):
         device = "cuda"
     # optimizer = torch.optim.SGD(model.parameters(), lr, 
     #                         momentum=0.9,
-    #                         weight_decay=0.0005) 
+    #                         weight_decay=0.0005)
+
+    # optimizer = torch.optim.SGD(model.parameters(), 0.01, 
+    #                         momentum=0.9,
+    #                         weight_decay=0.0005)
+     
     optimizer = torch.optim.Adam(model.parameters(),
                 0.001,
                 betas=(0.9, 0.999),
