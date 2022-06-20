@@ -9,8 +9,6 @@ from torchvision import models, datasets, transforms
 
 from utils.sampling import label_to_onehot, cross_entropy_for_onehot
 
-
-
 def accuracy(output, target, topk=(1,)):
     with torch.no_grad():
         maxk = max(topk)
@@ -37,25 +35,11 @@ def fed_avg(self, local_ws, client_weights, lr_outer):
 
         self.w_t[k] = w_avg[k]
 
-def local_update(train_ldr, model, lr):
+def local_update(train_ldr, model, optimizer):
     
     if torch.cuda.is_available():
         device = "cuda"
-    # optimizer = torch.optim.SGD(model.parameters(), lr, 
-    #                         momentum=0.9,
-    #                         weight_decay=0.0005)
 
-    # optimizer = torch.optim.SGD(model.parameters(), 0.01, 
-    #                         momentum=0.9,
-    #                         weight_decay=0.0005)
-     
-    optimizer = torch.optim.Adam(model.parameters(),
-                0.001,
-                betas=(0.9, 0.999),
-                eps=1e-08,
-                weight_decay=0,
-                amsgrad=False)
-        
     model.to(device)
     model.train()
     loss_meter = 0
@@ -65,13 +49,13 @@ def local_update(train_ldr, model, lr):
         
         optimizer.zero_grad()                
         loss = torch.tensor(0.).to(device)
-
         pred = model(x)
+        # print(pred)
+        # print(y)
+
         loss += F.cross_entropy(pred, y)
-        
         loss.backward()
 
-        
         optimizer.step()                
         loss_meter += loss.item()         
     loss_meter = loss_meter/len(train_ldr)     
@@ -98,8 +82,11 @@ def test(model, dataloader):
             target = target.to(device)
     
             pred = model(data)  # test = 4
+
+
             loss_meter += F.cross_entropy(pred, target, reduction='sum').item() #sum up batch loss
             pred = pred.max(1, keepdim=True)[1] # get the index of the max log-probability
+
             acc_meter += pred.eq(target.view_as(pred)).sum().item()
             runcount += data.size(0) 
 

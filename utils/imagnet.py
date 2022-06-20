@@ -28,26 +28,23 @@ print(test.class_to_idx)
 # print(test.imgs)
 
 
-
 # cp -r /home/jjlin/datasets/ILSVRC2012/train/n01440764/  /home/lbw/Data/ILSVRC2012/train/ &
-# cp -r /home/jjlin/datasets/ILSVRC2012/train/n01443537/  /home/lbw/Data/ILSVRC2012/train/ &
-# cp -r /home/jjlin/datasets/ILSVRC2012/train/n01484850/  /home/lbw/Data/ILSVRC2012/train/ &
-# cp -r /home/jjlin/datasets/ILSVRC2012/train/n01491361/  /home/lbw/Data/ILSVRC2012/train/ &
-# cp -r /home/jjlin/datasets/ILSVRC2012/train/n01494475/  /home/lbw/Data/ILSVRC2012/train/ &
-# cp -r /home/jjlin/datasets/ILSVRC2012/train/n01496331/  /home/lbw/Data/ILSVRC2012/train/ &
-# cp -r /home/jjlin/datasets/ILSVRC2012/train/n01498041/  /home/lbw/Data/ILSVRC2012/train/ &
-# cp -r /home/jjlin/datasets/ILSVRC2012/train/n01514668/  /home/lbw/Data/ILSVRC2012/train/ &
-# cp -r /home/jjlin/datasets/ILSVRC2012/train/n01514859/  /home/lbw/Data/ILSVRC2012/train/ &
-# cp -r /home/jjlin/datasets/ILSVRC2012/train/n01518878/  /home/lbw/Data/ILSVRC2012/train/
-
-
+# cp -r /home/jjlin/datasets/ILSVRC2012/train/n01860187/  /home/lbw/Data/ILSVRC2012/train/ &
+# cp -r /home/jjlin/datasets/ILSVRC2012/train/n02097474/  /home/lbw/Data/ILSVRC2012/train/ &
+# cp -r /home/jjlin/datasets/ILSVRC2012/train/n02165105/  /home/lbw/Data/ILSVRC2012/train/ &
+# cp -r /home/jjlin/datasets/ILSVRC2012/train/n02669723/  /home/lbw/Data/ILSVRC2012/train/ &
+# cp -r /home/jjlin/datasets/ILSVRC2012/train/n03042490/  /home/lbw/Data/ILSVRC2012/train/ &
+# cp -r /home/jjlin/datasets/ILSVRC2012/train/n03532672/  /home/lbw/Data/ILSVRC2012/train/ &
+# cp -r /home/jjlin/datasets/ILSVRC2012/train/n03887697/  /home/lbw/Data/ILSVRC2012/train/ &
+# cp -r /home/jjlin/datasets/ILSVRC2012/train/n04243546/  /home/lbw/Data/ILSVRC2012/train/ &
+# cp -r /home/jjlin/datasets/ILSVRC2012/train/n04552348/  /home/lbw/Data/ILSVRC2012/train/
 # cp -r /home/jjlin/datasets/ILSVRC2012/val/n01440764/  /home/lbw/Data/ILSVRC2012/val/ &
-# cp -r /home/jjlin/datasets/ILSVRC2012/val/n01443537/  /home/lbw/Data/ILSVRC2012/val/ &
-# cp -r /home/jjlin/datasets/ILSVRC2012/val/n01484850/  /home/lbw/Data/ILSVRC2012/val/ &
-# cp -r /home/jjlin/datasets/ILSVRC2012/val/n01491361/  /home/lbw/Data/ILSVRC2012/val/ &
-# cp -r /home/jjlin/datasets/ILSVRC2012/val/n01494475/  /home/lbw/Data/ILSVRC2012/val/ &
-# cp -r /home/jjlin/datasets/ILSVRC2012/val/n01496331/  /home/lbw/Data/ILSVRC2012/val/ &
-# cp -r /home/jjlin/datasets/ILSVRC2012/val/n01498041/  /home/lbw/Data/ILSVRC2012/val/ &
-# cp -r /home/jjlin/datasets/ILSVRC2012/val/n01514668/  /home/lbw/Data/ILSVRC2012/val/ &
-# cp -r /home/jjlin/datasets/ILSVRC2012/val/n01514859/  /home/lbw/Data/ILSVRC2012/val/ &
-# cp -r /home/jjlin/datasets/ILSVRC2012/val/n01518878/  /home/lbw/Data/ILSVRC2012/val/
+# cp -r /home/jjlin/datasets/ILSVRC2012/val/n01860187/  /home/lbw/Data/ILSVRC2012/val/ &
+# cp -r /home/jjlin/datasets/ILSVRC2012/val/n02097474/  /home/lbw/Data/ILSVRC2012/val/ &
+# cp -r /home/jjlin/datasets/ILSVRC2012/val/n02165105/  /home/lbw/Data/ILSVRC2012/val/ &
+# cp -r /home/jjlin/datasets/ILSVRC2012/val/n02669723/  /home/lbw/Data/ILSVRC2012/val/ &
+# cp -r /home/jjlin/datasets/ILSVRC2012/val/n03042490/  /home/lbw/Data/ILSVRC2012/val/ &
+# cp -r /home/jjlin/datasets/ILSVRC2012/val/n03532672/  /home/lbw/Data/ILSVRC2012/val/ &
+# cp -r /home/jjlin/datasets/ILSVRC2012/val/n03887697/  /home/lbw/Data/ILSVRC2012/val/ &
+# cp -r /home/jjlin/datasets/ILSVRC2012/val/n04243546/  /home/lbw/Data/ILSVRC2012/val/ &
+# cp -r /home/jjlin/datasets/ILSVRC2012/val/n04552348/  /home/lbw/Data/ILSVRC2012/val/

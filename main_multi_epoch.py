@@ -13,7 +13,6 @@ import torchvision
 from torchvision import models, datasets, transforms
 from torch.utils.data import DataLoader
 from utils.training import local_update, test, accuracy, fed_avg
-
 from skimage.exposure import rescale_intensity
 from models.vision import LeNet, AlexNet_Imagenet, AlexNet_Cifar, ResNet18, weights_init
 from utils.args import parser_args
@@ -70,7 +69,7 @@ if __name__ == '__main__':
     
     # prepare dataset
     if args.dataset == "imagenet":
-        num_classes = 10
+        num_classes = 20
         input_size = 224
     if args.dataset == "cifar10":
         num_classes = 10
@@ -83,19 +82,32 @@ if __name__ == '__main__':
                                                     data_root = args.data_root,
                                                     iid = True,
                                                     num_users = 10)
-    local_train_ldr = DataLoader(dst, batch_size = 64, shuffle=False, num_workers=2)
-    test_ldr = DataLoader(test_set, batch_size = 64, shuffle=False, num_workers=2)
-    
+    local_train_ldr = DataLoader(dst, batch_size = 32, shuffle=True, num_workers=2)
+
     # prepare model 
     if args.model == "lenet":
         net = LeNet(input_size=input_size).to(device)
     if args.model == "alexnet":
         if args.dataset == "imagenet":
-            net = AlexNet_Imagenet(num_classes=num_classes, input_size = input_size).to(device)
+            net = AlexNet_Imagenet(num_classes=num_classes, input_size = input_size).to(device) # pretrained = True
         else: 
             net = AlexNet_Cifar(num_classes=num_classes, input_size = input_size).to(device)
     if args.model == "resnet":
-        net = ResNet18(num_classes=num_classes, input_size=input_size).to(device)
+        if args.dataset == "imagenet":
+            net = ResNet18(num_classes=num_classes, imagenet = True).to(device)
+        else:
+            net = ResNet18(num_classes=num_classes, imagenet = False).to(device)
+        
+    # learning_optimizer = torch.optim.SGD(net.parameters(), 0.01, 
+    #                         momentum=0.9,
+    #                         weight_decay=0.0005)
+     
+    learning_optimizer = torch.optim.Adam(net.parameters(),
+                0.0001,
+                betas=(0.9, 0.999),
+                eps=1e-08,
+                weight_decay=0,
+                amsgrad=False)
 
     img_index = args.index
 
@@ -105,7 +117,6 @@ if __name__ == '__main__':
         if not os.path.exists(img_path): 
             os.makedirs(img_path) 
     
-
     # load image and label 
     tp = transforms.ToTensor()
     tt = transforms.ToPILImage()
@@ -117,33 +128,19 @@ if __name__ == '__main__':
     data_size = gt_data.size()
     gt_data = gt_data.view(1, *data_size)
     
-    # print(gt_data.shape)
-    # print(dst[img_index][0].view(1, *data_size).shape)
-    # print(dst[img_index][0].shape)
-    # print(dst[img_index+1][0].shape)
-    # print(dst[img_index+2][0].shape)
-    # print(dst[img_index+3][0].shape)
-    # print(dst[img_index+4][0].shape)
-    # plt.figure(figsize=(30, 20))
-    # plt.imshow(tt(dst[img_index+4][0])) 
-    # plt.savefig("test.jpg")
-    # plt.close()    
-    # exit()
-
     # batch selection to be attacked
     for i in range(args.batch_size-1):
         gt_data = torch.cat([gt_data, dst[img_index+i+1][0].view(1, *data_size).to(device)], dim=0)
         gt_label = torch.cat([gt_label, torch.Tensor([dst[img_index+i+1][1]]).long().view(1, ).to(device)], dim=0)
 
-    gt_onehot_label = label_to_onehot(gt_label, num_classes= 10)
+    gt_onehot_label = label_to_onehot(gt_label, num_classes= num_classes)
 
     # generate dummy data and label
-    dummy_data = torch.randn(gt_data.size()).to(device).requires_grad_(True)
-    dummy_label = torch.randn(gt_onehot_label.size()).to(device).requires_grad_(True)
+    dummy_data = torch.rand(gt_data.size()).to(device).requires_grad_(True)
+    dummy_label = torch.rand(gt_onehot_label.size()).to(device).requires_grad_(True)
 
     # set optimizer for deep leakage
     #optimizer = torch.optim.LBFGS([dummy_data, dummy_label], lr = 1)
-
     history = []
     x_avg = dummy_data.clone().detach()
     y_avg = dummy_label.clone().detach()
@@ -155,8 +152,8 @@ if __name__ == '__main__':
     #     model_dict = torch.load(dir+ "model_"+str(i)+".pth")['model']
     #     model_time.append(model_dict)
 
-    for i in range(10):  
-        local_update(local_train_ldr, net, 0.1)
+    for i in range(20):  
+        local_update(local_train_ldr, net, learning_optimizer)
         loss, acc = test(net, local_train_ldr)
         print("training loss: %.4f"  % loss)
         print("training acc: %.3f"  % acc)

@@ -1,1 +1,0 @@
-CUDA_VISIBLE_DEVICES=1 python main_multi_epoch.py --data_root "/home/lbw/Data"  --dataset 'cifar10' --model "alexnet" --batch_size 2 --lr 1

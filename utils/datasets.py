@@ -35,16 +35,7 @@ def get_data(dataset, data_root, iid, num_users):
     if ds == 'cifar10':
     
         normalize = transforms.Normalize(mean=[0.507, 0.487, 0.441], std=[0.267, 0.256, 0.276])
-        # transform_train = transforms.Compose([transforms.RandomCrop(32, padding=4),
-        #                                       transforms.RandomHorizontalFlip(),
-        #                                       transforms.ColorJitter(brightness=0.25, contrast=0.8),
-        #                                       transforms.ToTensor(),
-        #                                       normalize,
-        #                                       ])  
-        # transform_test = transforms.Compose([transforms.CenterCrop(32),
-        #                                      transforms.ToTensor(),
-        #                                      normalize,
-        #                                      ])
+
         transform_train = transforms.Compose([ transforms.ToTensor()])  
         transform_test = transforms.Compose([ transforms.ToTensor()])  
 
@@ -65,16 +56,7 @@ def get_data(dataset, data_root, iid, num_users):
     if ds == 'cifar100':
     
         normalize = transforms.Normalize(mean=[0.507, 0.487, 0.441], std=[0.267, 0.256, 0.276])
-        # transform_train = transforms.Compose([transforms.RandomCrop(32, padding=4),
-        #                                       transforms.RandomHorizontalFlip(),
-        #                                       transforms.ColorJitter(brightness=0.25, contrast=0.8),
-        #                                       transforms.ToTensor(),
-        #                                       normalize,
-        #                                       ])  
-        # transform_test = transforms.Compose([transforms.CenterCrop(32),
-        #                                      transforms.ToTensor(),
-        #                                      normalize,
-        #                                      ])
+
         transform_train = transforms.Compose([ transforms.ToTensor()])  
         transform_test = transforms.Compose([ transforms.ToTensor()])  
 
@@ -93,29 +75,33 @@ def get_data(dataset, data_root, iid, num_users):
                                                 )
 
     if ds == "imagenet":
-        root = '/home/lbw/Data/'
 
-        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        imagenet_root = os.path.join(data_root, 'sub-imagenet-20')
 
         def get_imagenet(root, train = True, transform = None, target_transform = None):
             if train:
-                root = os.path.join(data_root, 'ILSVRC2012/train')
+                root = os.path.join(data_root, 'sub-imagenet-20/train')
             else:
-                root = os.path.join(data_root, 'ILSVRC2012/val')
+                root = os.path.join(data_root, 'sub-imagenet-20/val')
             return datasets.ImageFolder(root = root,
                                     transform = transform,
                                     target_transform = target_transform)
-        transform = transforms.Compose([ transforms.ToTensor(),  Resize((3, 224, 224)), normalize ])
+        # transform = transforms.Compose([ transforms.ToTensor(),  Resize((3, 224, 224)) ])
+        transform = transforms.Compose([ transforms.ToTensor()])
 
-        train_set = get_imagenet(root=root, train=True, transform = transform) #, target_transform= None)
-        test_set = get_imagenet(root=root, train=False, transform = transform) #, target_transform= None) 
-        # size = (256, 340)
-        # for i in train_set:
-        #     i[0] = skimage.transform.resize(i[0], size)
-        #     i[1] = i[1] 
-        # for i in test_set:
-        #     i = skimage.transform.resize(i[0], size)
-        #     i[1] = i[1]                                                  
+        # transform = transforms.Compose([
+        #     transforms.ToTensor(),
+        #     transforms.Normalize([0.4802, 0.4481, 0.3975], [0.2302, 0.2265, 0.2262]),
+        # ])
+
+        image_datasets = {x: datasets.ImageFolder(imagenet_root+ '/' + x, transform)
+                      for x in ['train', 'val', 'test']}
+        train_set = image_datasets['train']
+        test_set = image_datasets['test']
+        
+        # train_set = get_imagenet(root=root, train=True, transform = transform) #, target_transform= None)
+        # test_set = get_imagenet(root=root, train=False, transform = transform) #, target_transform= None) 
+                                             
     
     if iid:
         dict_users = cifar_iid(train_set, num_users)

@@ -7,6 +7,7 @@ import torchvision
 from torchvision import models, datasets, transforms
 from models.layers.conv2d import ConvBlock
 
+from torchvision.models import alexnet
 
 
 def weights_init(m):
@@ -35,17 +36,15 @@ class LeNet(nn.Module):
     def forward(self, x):
         out = self.body(x)
         out = out.view(out.size(0), -1)
-
-        # print(out.shape)
-        # exit()
         out = self.fc(out)
         return out
-
 
 
 class AlexNet_Imagenet(nn.Module):
     def __init__(self,num_classes=3, input_size = 32):
         super(AlexNet_Imagenet, self).__init__()
+
+        params = []
         self.features = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=11, stride=4, padding=2),
             nn.ReLU(inplace=True),
@@ -72,25 +71,47 @@ class AlexNet_Imagenet(nn.Module):
             nn.Linear(4096, 4096),
             nn.ReLU(inplace=True),
             nn.Linear(4096, num_classes),
-              
-            # nn.Linear(128 * 6 * 6, 2048),
-            # nn.ReLU(inplace=True),
-            # nn.Dropout(),
-            # nn.Linear(2048, 2048),
-            # nn.ReLU(inplace=True),
-            # nn.Dropout(),
-            # nn.Linear(2048, num_classes),
         )
+        for layer in self.features:
+            if isinstance(layer, nn.Conv2d):
+                params.append(layer.weight)
+                params.append(layer.bias)
+
+        for layer in self.classifier:
+            if isinstance(layer, nn.Linear):
+                params.append(layer.weight)
+                params.append(layer.bias)
+        
+        self._load_pretrained_from_torch(params)
+
+    def _load_pretrained_from_torch(self, params):
+        # load a pretrained alexnet from torchvision
+        torchmodel = alexnet(True)
+        torchparams = []
+        for layer in torchmodel.features:
+            if isinstance(layer, nn.Conv2d):
+                torchparams.append(layer.weight)
+                torchparams.append(layer.bias)
+
+        for layer in torchmodel.classifier:
+            if isinstance(layer, nn.Linear):
+                torchparams.append(layer.weight)
+                torchparams.append(layer.bias)
+
+        for torchparam, param in zip(torchparams, params):
+            # print(torchparam.size())
+            # print(param.size())
+            if torchparam.size() == param.size():
+                param.data.copy_(torchparam.data)
+            # assert torchparam.size() == param.size(), 'size not match'
+            # param.data.copy_(torchparam.data)
 
     def forward(self,x):
         x = self.features(x)
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
         x = self.classifier(x)
-       
         return x
-
-
 
 class AlexNet_Cifar(nn.Module):
 
@@ -179,7 +200,7 @@ class BasicBlock(nn.Module):
         return out
 
 class ResNet(nn.Module):
-    def __init__(self, block, num_blocks, num_classes=100): #BasicPrivateBlock, [2, 2, 2, 2], **model_kwargs
+    def __init__(self, block, num_blocks, num_classes=100, imagenet = True): #BasicPrivateBlock, [2, 2, 2, 2], **model_kwargs
         super(ResNet, self).__init__()
         self.in_planes = 64
         self.num_blocks = num_blocks
@@ -189,7 +210,10 @@ class ResNet(nn.Module):
         self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2)
         self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
         self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
-        self.linear = nn.Linear(512 * block.expansion, num_classes)
+        if imagenet == True:
+            self.linear = nn.Linear(25088, num_classes)
+        else:
+            self.linear = nn.Linear(512 * block.expansion, num_classes)
 
     def _make_layer(self, block, planes, num_blocks, stride): #BasicPrivateBlock, planes = 512, numblocks = 2, stride =2, **model_kwargs
         strides = [stride] + [1] * (num_blocks - 1) # [2] + [1]*1 = [2, 1]
@@ -214,6 +238,8 @@ class ResNet(nn.Module):
 
         out = F.avg_pool2d(out, 4)
         out = out.view(out.size(0), -1)
+        # print(out.shape)
+        # exit()
         out = self.linear(out)
 
         return out
@@ -221,8 +247,6 @@ class ResNet(nn.Module):
 def ResNet18(**model_kwargs):
     return ResNet(BasicBlock, [2, 2, 2, 2], **model_kwargs)
 
-def ResNet34():
-    return ResNet(BasicBlock, [3,4,6,3])
 
 
 
