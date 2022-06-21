@@ -24,6 +24,9 @@ def MSE(A, B):
     B = rescale_intensity(1.0 * B, out_range=(0, 1))
     return np.mean((A - B) ** 2)
 
+def plot_his(A):
+    plt.hist(torch.flatten(A).cpu().detach().numpy(), bins='auto', density=True)
+
 def _tensor_size(t):
     return t.size()[1] * t.size()[2] * t.size()[3]
 
@@ -82,21 +85,25 @@ if __name__ == '__main__':
                                                     data_root = args.data_root,
                                                     iid = True,
                                                     num_users = 10)
-    local_train_ldr = DataLoader(dst, batch_size = 32, shuffle=True, num_workers=2)
-
+    local_train_ldr = DataLoader(dst, batch_size = 64, shuffle=False, num_workers=2)
+   
+    model_dict = []
     # prepare model 
-    if args.model == "lenet":
-        net = LeNet(input_size=input_size).to(device)
-    if args.model == "alexnet":
-        if args.dataset == "imagenet":
-            net = AlexNet_Imagenet(num_classes=num_classes, input_size = input_size).to(device) # pretrained = True
-        else: 
-            net = AlexNet_Cifar(num_classes=num_classes, input_size = input_size).to(device)
-    if args.model == "resnet":
-        if args.dataset == "imagenet":
-            net = ResNet18(num_classes=num_classes, imagenet = True).to(device)
-        else:
-            net = ResNet18(num_classes=num_classes, imagenet = False).to(device)
+    for i in range(10):
+        if args.model == "lenet":
+            net = LeNet(input_size=input_size).to(device)
+        if args.model == "alexnet":
+            if args.dataset == "imagenet":
+                net = AlexNet_Imagenet(num_classes=num_classes, input_size = input_size).to(device) # pretrained = True
+            else: 
+                net = AlexNet_Cifar(num_classes=num_classes, input_size = input_size).to(device)
+        if args.model == "resnet":
+            if args.dataset == "imagenet":
+                net = ResNet18(num_classes=num_classes, imagenet = True).to(device)
+            else:
+                net = ResNet18(num_classes=num_classes, imagenet = False).to(device)
+        
+        model_dict.append(net.state_dict())
         
     # learning_optimizer = torch.optim.SGD(net.parameters(), 0.01, 
     #                         momentum=0.9,
@@ -113,9 +120,12 @@ if __name__ == '__main__':
 
     # make image folder
     for j in range(args.batch_size):
-        img_path = os.path.join('assets', str(j)) 
+        img_path = 'images/' 
         if not os.path.exists(img_path): 
             os.makedirs(img_path) 
+
+    if not os.path.exists("hists/"+args.model+"_"+args.dataset):
+        os.makedirs("hists/"+args.model+"_"+args.dataset)
     
     # load image and label 
     tp = transforms.ToTensor()
@@ -147,18 +157,23 @@ if __name__ == '__main__':
 
     model_time = []
     dir = "/home/lbw/Code/model_time/"+args.model+"/"+args.dataset+"/"
+    
+    # print(net.state_dict()["features.2.conv.weight"][0])
 
-    # for i in range(1, 40, 1):
+    # for i in range(1, 5, 1):
     #     model_dict = torch.load(dir+ "model_"+str(i)+".pth")['model']
+    #     # print(model_dict["features.2.conv.weight"][0])
+    #     # exit()
     #     model_time.append(model_dict)
 
-    for i in range(20):  
-        local_update(local_train_ldr, net, learning_optimizer)
-        loss, acc = test(net, local_train_ldr)
-        print("training loss: %.4f"  % loss)
-        print("training acc: %.3f"  % acc)
+    for i in range(10):  
+        # local_update(local_train_ldr, net, learning_optimizer)
+        # loss, acc = test(net, local_train_ldr)
+        # print("training loss: %.4f"  % loss)
+        # print("training acc: %.3f"  % acc)
 
-        model_time.append(net.state_dict())
+        #model_time.append(net.state_dict())
+        model_time.append(model_dict[i])
   
     for iters in range(args.epochs): # default =300
     
@@ -170,8 +185,6 @@ if __name__ == '__main__':
             
         for i in range(len(model_time)):
             
-            #print("1")
-
             # load model 
             net.load_state_dict(model_time[i]) 
             # load data
@@ -184,14 +197,20 @@ if __name__ == '__main__':
             dy_dx = torch.autograd.grad(y, net.parameters())
             original_dy_dx = list((_.detach().clone() for _ in dy_dx))
 
+            # if i==0 and iters ==0:
+            #     for j in range(len(original_dy_dx)):
+            #         plot_his(original_dy_dx[j])
+            #         plt.savefig('hists/' + args.model + '_' + args.dataset + '/' + str(iters) + "_"+str(j) + '.png')
+            #         plt.close()
+            
             def closure():
                 optimizer.zero_grad()
-                dummy_pred = net(dummy_data) 
+                dummy_pred = net(dummy_data)
                 dummy_onehot_label = F.softmax(dummy_label, dim=-1)
                 dummy_loss = criterion(dummy_pred, dummy_onehot_label) 
                 dummy_dy_dx = torch.autograd.grad(dummy_loss, net.parameters(), create_graph=True)
                 grad_diff = 0
-                for gx, gy in zip(dummy_dy_dx, original_dy_dx): 
+                for gx, gy in zip(dummy_dy_dx, original_dy_dx):
                     grad_diff += ((gx - gy) ** 2).sum()
                 grad_diff.backward()
                 tvloss = 0.01 * TVloss(dummy_data)
@@ -215,8 +234,9 @@ if __name__ == '__main__':
         y_avg = avg(y_collection)   
     
         if (iters+1) % args.epoch_interval == 0:  #default = 10
-            #rec_mse = MSE(gt_data.cpu().detach().numpy(), dummy_data.cpu().detach().numpy())
-            print(iters, "gradloss: %.4f"  % avg_loss)
+            rec_mse = MSE(gt_data.cpu().detach().numpy(), dummy_data.cpu().detach().numpy())
+            tvloss = TVloss(dummy_data)
+            print(iters, "gradloss: %.4f"  % avg_loss, "mseloss: %.5f" % rec_mse, "tvloss-%.5f" % tvloss)
             history.append(dummy_data.cpu())
 
     subimage_size = int(args.epochs/args.epoch_interval)
@@ -224,12 +244,12 @@ if __name__ == '__main__':
     for i in range(args.batch_size):
         plt.figure(figsize=(30, 20))
         for j in range(subimage_size): # default = 30            
-            plt.subplot(int(subimage_size/10), 10, j+1)
+            plt.subplot(int(subimage_size/1), 1, j+1)
             plt.imshow(tt(history[j][i]))
             # plt.title("iter=%d" % (i * 100))
             # plt.axis('off')      
-        plt.savefig("assets/"+str(i)+"/"+"rec.jpg")
-        plt.close()         
+        plt.savefig("images/"+str(i)+".jpg")
+        plt.close() 
         
 
 

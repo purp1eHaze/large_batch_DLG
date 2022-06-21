@@ -5,7 +5,7 @@ import torch
 from torch.utils.data import Subset
 import torch.nn.functional as F
 
-np.random.seed(1)
+# np.random.seed(1)
 
 def label_to_onehot(target, num_classes):
 
