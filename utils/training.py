@@ -57,12 +57,15 @@ def local_update(train_ldr, model, optimizer):
         loss.backward()
 
         optimizer.step()                
-        loss_meter += loss.item()         
+        loss_meter += loss.item()
+        if batchid == 100:
+            return model.state_dict(), loss_meter
+
     loss_meter = loss_meter/len(train_ldr)     
     # if dp:
     #     for param in self.model.parameters():
     #         param.data = param.data + torch.normal(torch.zeros(param.size()), self.sigma).to(self.device)
-    return model.state_dict(), loss_meter, 
+    return model.state_dict(), loss_meter
 
 def test(model, dataloader):
 

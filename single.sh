@@ -1,1 +1,0 @@
-python main_single_epoch.py --data_root "/home/lbw/Data"  --dataset 'cifar10' --model "lenet" --batch_size 3 --lr 1

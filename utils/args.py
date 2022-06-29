@@ -13,7 +13,7 @@ def parser_args():
     parser.add_argument('--num_users', type=int, default=20,
                         help="number of users: K")
 
-    parser.add_argument('--epochs', type=int, default=20,
+    parser.add_argument('--epochs', type=int, default=300,
                         help='attack epochs')
 
     parser.add_argument('--epoch_interval', type=int, default=10,

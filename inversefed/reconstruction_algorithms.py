@@ -2,13 +2,99 @@
 
 import torch
 from collections import defaultdict, OrderedDict
-from inversefed.nn import MetaMonkey
 from .metrics import total_variation as TV
 from .metrics import InceptionScore
 from .medianfilt import MedianPool2d
 from copy import deepcopy
-
+from functools import partial
 import time
+
+class MetaMonkey(torch.nn.Module):
+    """Trace a networks and then replace its module calls with functional calls.
+
+    This allows for backpropagation w.r.t to weights for "normal" PyTorch networks.
+    """
+
+    def __init__(self, net):
+        """Init with network."""
+        super().__init__()
+        self.net = net
+        self.parameters = OrderedDict(net.named_parameters())
+
+
+    def forward(self, inputs, parameters=None):
+        """Live Patch ... :> ..."""
+        # If no parameter dictionary is given, everything is normal
+        if parameters is None:
+            return self.net(inputs)
+
+        # But if not ...
+        param_gen = iter(parameters.values())
+        method_pile = []
+        counter = 0
+
+        for name, module in self.net.named_modules():
+            if isinstance(module, torch.nn.Conv2d):
+                ext_weight = next(param_gen)
+                if module.bias is not None:
+                    ext_bias = next(param_gen)
+                else:
+                    ext_bias = None
+
+                method_pile.append(module.forward)
+                module.forward = partial(F.conv2d, weight=ext_weight, bias=ext_bias, stride=module.stride,
+                                         padding=module.padding, dilation=module.dilation, groups=module.groups)
+            elif isinstance(module, torch.nn.BatchNorm2d):
+                if module.momentum is None:
+                    exponential_average_factor = 0.0
+                else:
+                    exponential_average_factor = module.momentum
+
+                if module.training and module.track_running_stats:
+                    if module.num_batches_tracked is not None:
+                        module.num_batches_tracked += 1
+                        if module.momentum is None:  # use cumulative moving average
+                            exponential_average_factor = 1.0 / float(module.num_batches_tracked)
+                        else:  # use exponential moving average
+                            exponential_average_factor = module.momentum
+
+                ext_weight = next(param_gen)
+                ext_bias = next(param_gen)
+                method_pile.append(module.forward)
+                module.forward = partial(F.batch_norm, running_mean=module.running_mean, running_var=module.running_var,
+                                         weight=ext_weight, bias=ext_bias,
+                                         training=module.training or not module.track_running_stats,
+                                         momentum=exponential_average_factor, eps=module.eps)
+
+            elif isinstance(module, torch.nn.Linear):
+                lin_weights = next(param_gen)
+                lin_bias = next(param_gen)
+                method_pile.append(module.forward)
+                module.forward = partial(F.linear, weight=lin_weights, bias=lin_bias)
+
+            elif next(module.parameters(), None) is None:
+                # Pass over modules that do not contain parameters
+                pass
+            elif isinstance(module, torch.nn.Sequential):
+                # Pass containers
+                pass
+            else:
+                # Warn for other containers
+                if DEBUG:
+                    warnings.warn(f'Patching for module {module.__class__} is not implemented.')
+
+        output = self.net(inputs)
+
+        # Undo Patch
+        for name, module in self.net.named_modules():
+            if isinstance(module, torch.nn.modules.conv.Conv2d):
+                module.forward = method_pile.pop(0)
+            elif isinstance(module, torch.nn.BatchNorm2d):
+                module.forward = method_pile.pop(0)
+            elif isinstance(module, torch.nn.Linear):
+                module.forward = method_pile.pop(0)
+
+        return output
 
 DEFAULT_CONFIG = dict(signed=False,
                       boxed=True,
@@ -56,26 +142,18 @@ class GradientReconstructor():
         if self.config['scoring_choice'] == 'inception':
             self.inception = InceptionScore(batch_size=1, setup=self.setup)
 
+        
+
         self.loss_fn = torch.nn.CrossEntropyLoss(reduction='mean')
         self.iDLG = True
-    
-    def _init_images(self, img_shape):
-        if self.config['init'] == 'randn': # default 
-            return torch.randn((self.config['restarts'], self.num_images, *img_shape), **self.setup)
-        elif self.config['init'] == 'rand':
-            return (torch.rand((self.config['restarts'], self.num_images, *img_shape), **self.setup) - 0.5) * 2
-        elif self.config['init'] == 'zeros':
-            return torch.zeros((self.config['restarts'], self.num_images, *img_shape), **self.setup)
-        else:
-            raise ValueError()
 
     def reconstruct(self, input_data, labels, img_shape=(3, 32, 32), dryrun=False, eval=True, tol=None):
         """Reconstruct image from gradient."""
+
         start_time = time.time()
         if eval:
             self.model.eval()
 
-  
         stats = defaultdict(list)
         x = self._init_images(img_shape)
         scores = torch.zeros(self.config['restarts'])
@@ -101,10 +179,13 @@ class GradientReconstructor():
 
         try:
             for trial in range(self.config['restarts']):
+                
                 x_trial, labels = self._run_trial(x[trial], input_data, labels, dryrun=dryrun)
                 # Finalize
+            
                 scores[trial] = self._score_trial(x_trial, input_data, labels)
                 x[trial] = x_trial
+  
                 if tol is not None and scores[trial] <= tol:
                     break
                 if dryrun:
@@ -127,8 +208,19 @@ class GradientReconstructor():
         print(f'Total time: {time.time()-start_time}.')
         return x_optimal.detach(), stats
 
+    def _init_images(self, img_shape):
+        if self.config['init'] == 'randn':
+            return torch.randn((self.config['restarts'], self.num_images, *img_shape), **self.setup)
+        elif self.config['init'] == 'rand':
+            return (torch.rand((self.config['restarts'], self.num_images, *img_shape), **self.setup) - 0.5) * 2
+        elif self.config['init'] == 'zeros':
+            return torch.zeros((self.config['restarts'], self.num_images, *img_shape), **self.setup)
+        else:
+            raise ValueError()
 
     def _run_trial(self, x_trial, input_data, labels, dryrun=False):
+        #print(self.model)
+        #print(self.config)
         x_trial.requires_grad = True
         if self.reconstruct_label:
             output_test = self.model(x_trial)
@@ -160,11 +252,12 @@ class GradientReconstructor():
 
                                                                          max_iterations // 1.142], gamma=0.1)   # 3/8 5/8 7/8
         try:
-            print(max_iterations)
             for iteration in range(max_iterations):
                 
                 closure = self._gradient_closure(optimizer, x_trial, input_data, labels)
+                
                 rec_loss = optimizer.step(closure)
+                
                 if self.config['lr_decay']:
                     scheduler.step()
 
@@ -172,7 +265,6 @@ class GradientReconstructor():
                     # Project into image space
                     if self.config['boxed']:
                         x_trial.data = torch.max(torch.min(x_trial, (1 - dm) / ds), -dm / ds)
-
                     if (iteration + 1 == max_iterations) or iteration % 500 == 0:
                         print(f'It: {iteration}. Rec. loss: {rec_loss.item():2.4f}.')
 
@@ -192,8 +284,8 @@ class GradientReconstructor():
         return x_trial.detach(), labels
 
     def _gradient_closure(self, optimizer, x_trial, input_gradient, label):
-
-        def closure():
+        #print(x_trial.shape)
+        def closure():    
             optimizer.zero_grad()
             self.model.zero_grad()
             loss = self.loss_fn(self.model(x_trial), label)
@@ -201,12 +293,13 @@ class GradientReconstructor():
             rec_loss = reconstruction_costs([gradient], input_gradient,
                                             cost_fn=self.config['cost_fn'], indices=self.config['indices'],
                                             weights=self.config['weights'])
-
+            
             if self.config['total_variation'] > 0:
                 rec_loss += self.config['total_variation'] * TV(x_trial)
-            rec_loss.backward()
+            rec_loss.backward()   
             if self.config['signed']:
                 x_trial.grad.sign_()
+            
             return rec_loss
         return closure
 
@@ -247,6 +340,54 @@ class GradientReconstructor():
                                             weights=self.config['weights'])
         print(f'Optimal result score: {stats["opt"]:2.4f}')
         return x_optimal, stats
+
+
+
+class FedAvgReconstructor(GradientReconstructor):
+    """Reconstruct an image from weights after n gradient descent steps."""
+
+    def __init__(self, model, mean_std=(0.0, 1.0), local_steps=2, local_lr=1e-4,
+                 config=DEFAULT_CONFIG, num_images=1, use_updates=True, batch_size=0):
+        """Initialize with model, (mean, std) and config."""
+        super().__init__(model, mean_std, config, num_images)
+        self.local_steps = local_steps
+        self.local_lr = local_lr
+        self.use_updates = use_updates
+        self.batch_size = batch_size
+
+    def _gradient_closure(self, optimizer, x_trial, input_parameters, labels):
+        def closure():
+            optimizer.zero_grad()
+            self.model.zero_grad()
+            parameters = loss_steps(self.model, x_trial, labels, loss_fn=self.loss_fn,
+                                    local_steps=self.local_steps, lr=self.local_lr,
+                                    use_updates=self.use_updates,
+                                    batch_size=self.batch_size)
+            rec_loss = reconstruction_costs([parameters], input_parameters,
+                                            cost_fn=self.config['cost_fn'], indices=self.config['indices'],
+                                            weights=self.config['weights'])
+
+            if self.config['total_variation'] > 0:
+                rec_loss += self.config['total_variation'] * TV(x_trial)
+            rec_loss.backward()
+            if self.config['signed']:
+                x_trial.grad.sign_()
+            return rec_loss
+        return closure
+
+    def _score_trial(self, x_trial, input_parameters, labels):
+        if self.config['scoring_choice'] == 'loss':
+            self.model.zero_grad()
+            parameters = loss_steps(self.model, x_trial, labels, loss_fn=self.loss_fn,
+                                    local_steps=self.local_steps, lr=self.local_lr, use_updates=self.use_updates)
+            return reconstruction_costs([parameters], input_parameters,
+                                        cost_fn=self.config['cost_fn'], indices=self.config['indices'],
+                                        weights=self.config['weights'])
+        elif self.config['scoring_choice'] == 'tv':
+            return TV(x_trial)
+        elif self.config['scoring_choice'] == 'inception':
+            # We do not care about diversity here!
+            return self.inception(x_trial)
 
 
 def loss_steps(model, inputs, labels, loss_fn=torch.nn.CrossEntropyLoss(), lr=1e-4, local_steps=4, use_updates=True, batch_size=0):

@@ -87,12 +87,13 @@ def get_data(dataset, data_root, iid, num_users):
                                     transform = transform,
                                     target_transform = target_transform)
         # transform = transforms.Compose([ transforms.ToTensor(),  Resize((3, 224, 224)) ])
-        transform = transforms.Compose([ transforms.ToTensor()])
 
-        # transform = transforms.Compose([
-        #     transforms.ToTensor(),
-        #     transforms.Normalize([0.4802, 0.4481, 0.3975], [0.2302, 0.2265, 0.2262]),
-        # ])
+        #transform = transforms.Compose([ transforms.ToTensor()])
+
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize([0.4802, 0.4481, 0.3975], [0.2302, 0.2265, 0.2262]),
+        ])
 
         image_datasets = {x: datasets.ImageFolder(imagenet_root+ '/' + x, transform)
                       for x in ['train', 'val', 'test']}

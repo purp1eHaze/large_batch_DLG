@@ -14,21 +14,40 @@ from torchvision import models, datasets, transforms
 from torch.utils.data import DataLoader
 from utils.training import local_update, test, accuracy, fed_avg
 from skimage.exposure import rescale_intensity
-from models.vision import LeNet, AlexNet_Imagenet, AlexNet_Cifar, ResNet18, weights_init
+from models.vision import LeNet, LeNet_Imagenet, AlexNet_Imagenet, AlexNet_Cifar, ResNet18, weights_init
 from utils.args import parser_args
 from utils.datasets import get_data
 from utils.sampling import label_to_onehot, cross_entropy_for_onehot
 
+
 def MSE(A, B):
-    A = rescale_intensity(1.0 * A, out_range=(0, 1))
-    B = rescale_intensity(1.0 * B, out_range=(0, 1))
-    return np.mean((A - B) ** 2)
+    MSE = 0
+    for j in range(args.batch_size):
+        A1 = rescale_intensity(1.0 * A[j], out_range=(0, 1))
+        B1 = rescale_intensity(1.0 * B[j], out_range=(0, 1))
+        MSE += np.mean((A1 - B1) ** 2)
+    return np.mean(MSE)
+
+# def MSE(A, B):
+#     A = rescale_intensity(1.0 * A, out_range=(0, 1))
+#     B = rescale_intensity(1.0 * B, out_range=(0, 1))
+#     return np.mean((A - B) ** 2)
 
 def plot_his(A):
     plt.hist(torch.flatten(A).cpu().detach().numpy(), bins='auto', density=True)
 
 def _tensor_size(t):
     return t.size()[1] * t.size()[2] * t.size()[3]
+
+def TVloss_l1(x):
+    batch_size = x.size()[0]
+    h_x = x.size()[2]
+    w_x = x.size()[3]
+    # count_h = _tensor_size(x[:, :, 1:, :])
+    # count_w = _tensor_size(x[:, :, :, 1:])
+    h_tv = torch.abs((x[:, :, 1:, :] - x[:, :, :h_x - 1, :])).sum()
+    w_tv = torch.abs((x[:, :, :, 1:] - x[:, :, :, :w_x - 1])).sum()
+    return torch.sum(h_tv + w_tv) / batch_size
 
 def TVloss(x):
     batch_size = x.size()[0]
@@ -85,13 +104,16 @@ if __name__ == '__main__':
                                                     data_root = args.data_root,
                                                     iid = True,
                                                     num_users = 10)
-    local_train_ldr = DataLoader(dst, batch_size = 64, shuffle=False, num_workers=2)
+    local_train_ldr = DataLoader(dst, batch_size = 32, shuffle=False, num_workers=2)
    
     model_dict = []
     # prepare model 
     for i in range(10):
         if args.model == "lenet":
-            net = LeNet(input_size=input_size).to(device)
+            if args.dataset == "imagenet":
+                net = LeNet_Imagenet(input_size=input_size).to(device)
+            else:
+                net = LeNet(input_size=input_size).to(device)
         if args.model == "alexnet":
             if args.dataset == "imagenet":
                 net = AlexNet_Imagenet(num_classes=num_classes, input_size = input_size).to(device) # pretrained = True
@@ -105,16 +127,16 @@ if __name__ == '__main__':
         
         model_dict.append(net.state_dict())
         
-    # learning_optimizer = torch.optim.SGD(net.parameters(), 0.01, 
-    #                         momentum=0.9,
-    #                         weight_decay=0.0005)
+    learning_optimizer = torch.optim.SGD(net.parameters(), 0.0001, 
+                            momentum=0.9,
+                            weight_decay=0.0005)
      
-    learning_optimizer = torch.optim.Adam(net.parameters(),
-                0.0001,
-                betas=(0.9, 0.999),
-                eps=1e-08,
-                weight_decay=0,
-                amsgrad=False)
+    # learning_optimizer = torch.optim.Adam(net.parameters(),
+    #             0.0001,
+    #             betas=(0.9, 0.999),
+    #             eps=1e-08,
+    #             weight_decay=0,
+    #             amsgrad=False)
 
     img_index = args.index
 
@@ -160,19 +182,18 @@ if __name__ == '__main__':
     
     # print(net.state_dict()["features.2.conv.weight"][0])
 
-    # for i in range(1, 5, 1):
+    # for i in range(1, 2, 1):
     #     model_dict = torch.load(dir+ "model_"+str(i)+".pth")['model']
     #     # print(model_dict["features.2.conv.weight"][0])
     #     # exit()
     #     model_time.append(model_dict)
 
-    for i in range(10):  
+    for i in range(5):  
         # local_update(local_train_ldr, net, learning_optimizer)
         # loss, acc = test(net, local_train_ldr)
         # print("training loss: %.4f"  % loss)
         # print("training acc: %.3f"  % acc)
-
-        #model_time.append(net.state_dict())
+        # model_time.append(net.state_dict())
         model_time.append(model_dict[i])
   
     for iters in range(args.epochs): # default =300
@@ -201,8 +222,7 @@ if __name__ == '__main__':
             #     for j in range(len(original_dy_dx)):
             #         plot_his(original_dy_dx[j])
             #         plt.savefig('hists/' + args.model + '_' + args.dataset + '/' + str(iters) + "_"+str(j) + '.png')
-            #         plt.close()
-            
+            #         plt.close()   
             def closure():
                 optimizer.zero_grad()
                 dummy_pred = net(dummy_data)
@@ -213,7 +233,7 @@ if __name__ == '__main__':
                 for gx, gy in zip(dummy_dy_dx, original_dy_dx):
                     grad_diff += ((gx - gy) ** 2).sum()
                 grad_diff.backward()
-                tvloss = 0.01 * TVloss(dummy_data)
+                tvloss = 0.01 * TVloss_l1(dummy_data) + 0.01 * TVloss(dummy_data)
                 tvloss.backward() 
                 return grad_diff  
 
@@ -229,7 +249,6 @@ if __name__ == '__main__':
         avg_loss /= len(loss)
 
         diff_x, diff_y = diff(x_collection, y_collection, x_avg, y_avg)
-    
         x_avg = avg(x_collection)
         y_avg = avg(y_collection)   
     
@@ -244,7 +263,7 @@ if __name__ == '__main__':
     for i in range(args.batch_size):
         plt.figure(figsize=(30, 20))
         for j in range(subimage_size): # default = 30            
-            plt.subplot(int(subimage_size/1), 1, j+1)
+            plt.subplot(int(subimage_size/10), 10, j+1)
             plt.imshow(tt(history[j][i]))
             # plt.title("iter=%d" % (i * 100))
             # plt.axis('off')      
