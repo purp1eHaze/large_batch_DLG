@@ -25,6 +25,8 @@ def parser_args():
     parser.add_argument('--lr', type=float, default= 1,
                         help="learning rate for dlg")
 
+    parser.add_argument('--cost_fn', default='sim',  choices=['simlocal', 'l2', 'sim'], type=str, help='Choice of cost function.')
+
     # ============================ Model arguments ===================================
     parser.add_argument('--model', type=str, default='alexnet', choices=['alexnet', 'resnet', 'lenet'],
                         help='model architecture name')
@@ -45,18 +47,11 @@ def parser_args():
     parser.add_argument('--iid', action='store_true', default =True,
                         help='dataset iid or not')
 
+    parser.add_argument('--normalized', action='store_true', default =True,
+                        help='normalized or not')
+
     parser.add_argument('--optim', type=str, default='sgd',
                         help='optimizer: [sgd, adam]')
-
-    parser.add_argument('--sampling_type', choices=['poisson', 'uniform'],
-                         default='uniform', type=str,
-                         help='which kind of sampling we use') 
-
-    # =========================== DP ===================================
-    parser.add_argument('--dp', action='store_true', default=False,
-                        help='whether dp')
-
-    parser.add_argument('--sigma',  type=float, default= 0.1 , help='the sgd of Gaussian noise')
 
     
     args = parser.parse_args()

@@ -14,13 +14,11 @@ class MetaMonkey(torch.nn.Module):
 
     This allows for backpropagation w.r.t to weights for "normal" PyTorch networks.
     """
-
     def __init__(self, net):
         """Init with network."""
         super().__init__()
         self.net = net
         self.parameters = OrderedDict(net.named_parameters())
-
 
     def forward(self, inputs, parameters=None):
         """Live Patch ... :> ..."""
@@ -149,6 +147,7 @@ class GradientReconstructor():
 
     def reconstruct(self, input_data, labels, img_shape=(3, 32, 32), dryrun=False, eval=True, tol=None):
         """Reconstruct image from gradient."""
+       
 
         start_time = time.time()
         if eval:
@@ -238,7 +237,7 @@ class GradientReconstructor():
             if self.config['optim'] == 'adam':
                 optimizer = torch.optim.Adam([x_trial], lr=self.config['lr'])
             elif self.config['optim'] == 'sgd':  # actually gd
-                optimizer = torch.optim.SGD([x_trial], lr=0.01, momentum=0.9, nesterov=True)
+                optimizer = torch.optim.SGD([x_trial], lr=0.01) # momentum=0.9,  nesterov=True,
             elif self.config['optim'] == 'LBFGS':
                 optimizer = torch.optim.LBFGS([x_trial])
             else:
@@ -272,6 +271,7 @@ class GradientReconstructor():
                         if self.config['filter'] == 'none':
                             pass
                         elif self.config['filter'] == 'median':
+                            print("addition")
                             x_trial.data = MedianPool2d(kernel_size=3, stride=1, padding=1, same=False)(x_trial)
                         else:
                             raise ValueError()
@@ -289,6 +289,8 @@ class GradientReconstructor():
             optimizer.zero_grad()
             self.model.zero_grad()
             loss = self.loss_fn(self.model(x_trial), label)
+            # print(label)
+            # exit()
             gradient = torch.autograd.grad(loss, self.model.parameters(), create_graph=True)
             rec_loss = reconstruction_costs([gradient], input_gradient,
                                             cost_fn=self.config['cost_fn'], indices=self.config['indices'],
@@ -299,6 +301,7 @@ class GradientReconstructor():
             rec_loss.backward()   
             if self.config['signed']:
                 x_trial.grad.sign_()
+                #print("addition")
             
             return rec_loss
         return closure
@@ -340,8 +343,7 @@ class GradientReconstructor():
                                             weights=self.config['weights'])
         print(f'Optimal result score: {stats["opt"]:2.4f}')
         return x_optimal, stats
-
-
+        
 
 class FedAvgReconstructor(GradientReconstructor):
     """Reconstruct an image from weights after n gradient descent steps."""
@@ -460,7 +462,13 @@ def reconstruction_costs(gradients, input_gradient, cost_fn='l2', indices='def',
         weights = input_gradient[0].new_ones(len(input_gradient))
 
     total_costs = 0
+    # indice = 15 for Alexnet 
     for trial_gradient in gradients:
+        # print(len(gradients)) # len = 1
+        # print(trial_gradient[0].shape)
+        # print(trial_gradient[1].shape)
+        # print(trial_gradient[2].shape)
+        # exit()
         pnorm = [0, 0]
         costs = 0
         if indices == 'topk-2':

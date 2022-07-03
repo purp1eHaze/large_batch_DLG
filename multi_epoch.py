@@ -269,6 +269,63 @@ if __name__ == '__main__':
             # plt.axis('off')      
         plt.savefig("images/"+str(i)+".jpg")
         plt.close() 
+
+def reconstruction_costs(gradients, input_gradient, cost_fn='l2', indices='def', weights='equal'):
+    """Input gradient is given data."""
+    if isinstance(indices, list):
+        pass
+    elif indices == 'def':
+        indices = torch.arange(len(input_gradient))
+    elif indices == 'topk-1':
+        _, indices = torch.topk(torch.stack([p.norm() for p in input_gradient], dim=0), 4)
+    elif indices == 'top10':
+        _, indices = torch.topk(torch.stack([p.norm() for p in input_gradient], dim=0), 10)
+    elif indices == 'first5':
+        indices = torch.arange(0, 5)
+    elif indices == 'first10':
+        indices = torch.arange(0, 10)
+    elif indices == 'last5':
+        indices = torch.arange(len(input_gradient))[-5:]
+    elif indices == 'last10':
+        indices = torch.arange(len(input_gradient))[-10:]
+
+    ex = input_gradient[0]
+    if weights == 'linear':
+        weights = torch.arange(len(input_gradient), 0, -1, dtype=ex.dtype, device=ex.device) / len(input_gradient)
+    elif weights == 'exp':
+        weights = torch.arange(len(input_gradient), 0, -1, dtype=ex.dtype, device=ex.device)
+        weights = weights.softmax(dim=0)
+        weights = weights / weights[0]
+    else:
+        weights = input_gradient[0].new_ones(len(input_gradient))
+
+    total_costs = 0
+    for trial_gradient in gradients:
+        pnorm = [0, 0]
+        costs = 0
+        if indices == 'topk-2':
+            _, indices = torch.topk(torch.stack([p.norm().detach() for p in trial_gradient], dim=0), 4)
+        for i in indices:
+            if cost_fn == 'l2':
+                costs += ((trial_gradient[i] - input_gradient[i]).pow(2)).sum() * weights[i]
+            elif cost_fn == 'l1':
+                costs += ((trial_gradient[i] - input_gradient[i]).abs()).sum() * weights[i]
+            elif cost_fn == 'max':
+                costs += ((trial_gradient[i] - input_gradient[i]).abs()).max() * weights[i]
+            elif cost_fn == 'sim':
+                costs -= (trial_gradient[i] * input_gradient[i]).sum() * weights[i]
+                pnorm[0] += trial_gradient[i].pow(2).sum() * weights[i]
+                pnorm[1] += input_gradient[i].pow(2).sum() * weights[i]
+            elif cost_fn == 'simlocal':
+                costs += 1 - torch.nn.functional.cosine_similarity(trial_gradient[i].flatten(),
+                                                                   input_gradient[i].flatten(),
+                                                                   0, 1e-10) * weights[i]
+        if cost_fn == 'sim':
+            costs = 1 + costs / pnorm[0].sqrt() / pnorm[1].sqrt()
+
+        # Accumulate final costs
+        total_costs += costs
+    return total_costs / len(gradients)
         
 
 
