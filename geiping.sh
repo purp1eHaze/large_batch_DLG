@@ -9,4 +9,4 @@
 # and then start the reconstruction, specifying a target image size:
 # output, stats = rec_machine.reconstruct(input_gradient, None, img_shape=(3, 32, 32))
 
-CUDA_VISIBLE_DEVICES=2 python geiping.py --model alexnet --dataset imagenet --optimizer "sgd" --trained_model --cost_fn l2 --indices def --restarts 1 --num_images 2 --save_image --target_id -1 --data_path /home/lbw/Data
+CUDA_VISIBLE_DEVICES=2 python geiping.py --model alexnet --dataset imagenet --optimizer "adam" --trained_model --cost_fn sim --indices def --restarts 1 --num_images 2 --save_image --target_id -1 --data_path /home/lbw/Data

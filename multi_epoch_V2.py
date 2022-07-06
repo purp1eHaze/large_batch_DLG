@@ -20,6 +20,8 @@ from utils.args import parser_args
 from utils.datasets import get_data
 from utils.sampling import label_to_onehot, cross_entropy_for_onehot, Classification, psnr, reconstruction_costs
 
+torch.backends.cudnn.benchmark = True
+torch.backends.cudnn.deterministic = True
 
 def MSE(A, B):
     MSE = 0
@@ -133,6 +135,8 @@ if __name__ == '__main__':
                 net = ResNet18(num_classes=num_classes, imagenet = False).to(device)
         
         model_dict.append(net.state_dict())
+    net.eval()
+    #print(next(net.parameters()).dtype)
 
         
     learning_optimizer = torch.optim.SGD(net.parameters(), 0.0001, 
@@ -164,7 +168,8 @@ if __name__ == '__main__':
     
     # batch selection to be attacked
     ground_truth, labels = [], []
-    target_id_ = args.index
+    target_id_ = 1
+    print(target_id_)
     while len(labels) < args.batch_size:
         img, label = local_train_ldr.dataset[target_id_]
         target_id_ += 1
@@ -222,13 +227,17 @@ if __name__ == '__main__':
         lr=0.1,
         optim="adam",   #args.optimizer,
         restarts=1, #args.restarts,
-        max_iterations=4000,
+        max_iterations=15000,
         total_variation=1e-4, #args.tv,
         init="randn",
         filter="none",
         lr_decay=True,
         scoring_choice="loss",
     )
+    print(config)
+    print(torch.backends.cudnn.benchmark)
+    print(torch.backends.cudnn.deterministic)
+    
     net.zero_grad()
     loss_fn = Classification() 
     target_loss, _, _ = loss_fn(net(ground_truth), labels)
@@ -236,14 +245,13 @@ if __name__ == '__main__':
     input_gradient = [grad.detach() for grad in input_gradient]
     full_norm = torch.stack([g.norm() for g in input_gradient]).mean()
 
+    # Original Geiping Mod
     # rec_machine = inversefed.GradientReconstructor(net, (dm, ds), config, num_images=args.batch_size)
-    
     # output, stats = rec_machine.reconstruct(input_gradient, labels, img_shape=img_shape, dryrun=False)
-
     # exit()
 
 
-    net.load_state_dict(model_time[i]) 
+    #net.load_state_dict(model_time[i]) 
     dummy_data = dummy_data.requires_grad_(True)
     #dummy_label = y_avg.requires_grad_(True)
 
@@ -251,14 +259,19 @@ if __name__ == '__main__':
     if args.optim == 'adam':
         optimizer = torch.optim.Adam([dummy_data], lr=args.lr)
     elif args.optim == 'sgd':  # actually gd
-        optimizer = torch.optim.SGD([dummy_data], lr=args.lr) # momentum=0.9,  nesterov=True,
+        optimizer = torch.optim.SGD([dummy_data],  lr=args.lr) # momentum=0.9,  nesterov=True,
     elif args.optim == 'LBFGS':
         optimizer = torch.optim.LBFGS([dummy_data])
 
-    loss_dlg = torch.nn.CrossEntropyLoss(reduction='mean')
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
+                                                        milestones=[args.epochs // 2.667, args.epochs  // 1.6,
 
+                                                                    args.epochs  // 1.142], gamma=0.1)   # 3/8 5/8 7/8
+
+    loss_dlg = torch.nn.CrossEntropyLoss(reduction='mean')
+   
     for iters in range(args.epochs): # default =300
-    
+        
         loss = []
         def closure():    
             optimizer.zero_grad()
@@ -274,6 +287,7 @@ if __name__ == '__main__':
     
         # dummy_data = dummy_data + dummy_data.grad 
         optimizer.step(closure)
+        scheduler.step()
         loss.append(closure().item())
 
         # boxed
@@ -292,9 +306,10 @@ if __name__ == '__main__':
             print(iters, "gradloss: %.4f"  % avg_loss, "mseloss: %.5f" % rec_mse, "tvloss-%.5f" % tvloss)
             
             #history.append(denormal_ground_truth.cpu())
-            history.append(denormal_dummy_data.cpu())
+            if ((iters+1)/args.epochs > 0.6):
+                history.append(denormal_dummy_data.cpu())
 
-    subimage_size = int(args.epochs/args.epoch_interval)
+    subimage_size = len(history)
     # save image
     for i in range(args.batch_size):
         plt.figure(figsize=(30, 20))

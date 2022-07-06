@@ -75,11 +75,13 @@ if __name__ == "__main__":
             net = ResNet18(num_classes=num_classes, imagenet = False).to(**setup)
     model = net 
     model.to(**setup)
+    print(next(model.parameters()).dtype)
     model.eval()
 
     # Sanity check: Validate model accuracy
     # Choose example images from the validation set or from third-party sources
     target_id = args.target_id +  args.num_images
+    print(target_id)
  
     if args.num_images == 1:
         ground_truth, labels = local_train_ldr.dataset[target_id]
@@ -98,6 +100,7 @@ if __name__ == "__main__":
 
         ground_truth = torch.stack(ground_truth)
         labels = torch.cat(labels)
+    print(ground_truth.dtype)
       
     img_shape = (3, ground_truth.shape[2], ground_truth.shape[3])
 
@@ -172,6 +175,7 @@ if __name__ == "__main__":
                 lr_decay=False,
                 scoring_choice=args.scoring_choice,
             )
+     
         rec_machine = inversefed.GradientReconstructor(model, (dm, ds), config, num_images=args.num_images)
         
         output, stats = rec_machine.reconstruct(input_gradient, labels, img_shape=img_shape, dryrun=args.dryrun)

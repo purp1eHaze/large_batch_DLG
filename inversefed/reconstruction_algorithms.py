@@ -140,8 +140,6 @@ class GradientReconstructor():
         if self.config['scoring_choice'] == 'inception':
             self.inception = InceptionScore(batch_size=1, setup=self.setup)
 
-        
-
         self.loss_fn = torch.nn.CrossEntropyLoss(reduction='mean')
         self.iDLG = True
 
@@ -252,7 +250,7 @@ class GradientReconstructor():
                                                                          max_iterations // 1.142], gamma=0.1)   # 3/8 5/8 7/8
         try:
             for iteration in range(max_iterations):
-                
+              
                 closure = self._gradient_closure(optimizer, x_trial, input_data, labels)
                 
                 rec_loss = optimizer.step(closure)
@@ -460,7 +458,7 @@ def reconstruction_costs(gradients, input_gradient, cost_fn='l2', indices='def',
         weights = weights / weights[0]
     else:
         weights = input_gradient[0].new_ones(len(input_gradient))
-
+ 
     total_costs = 0
     # indice = 15 for Alexnet 
     for trial_gradient in gradients:
