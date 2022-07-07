@@ -6,7 +6,7 @@ import torchvision
 import torchvision.transforms as transforms
 from torch.utils.data import Dataset, DataLoader
 import torchvision.datasets as datasets
-from utils.sampling import *
+from utils.metrics import *
 from collections import defaultdict
 from torchvision.datasets.folder import pil_loader, make_dataset, IMG_EXTENSIONS
 import skimage as skimage
@@ -29,7 +29,7 @@ class Resize(object):
         return image_new
 
 
-def get_data(dataset, data_root, iid, num_users):
+def get_data(dataset, data_root, normalized):
     ds = dataset 
     
     if ds == 'cifar10':
@@ -77,37 +77,25 @@ def get_data(dataset, data_root, iid, num_users):
     if ds == "imagenet":
 
         imagenet_root = os.path.join(data_root, 'sub-imagenet-20')
-
-        def get_imagenet(root, train = True, transform = None, target_transform = None):
-            if train:
-                root = os.path.join(data_root, 'sub-imagenet-20/train')
-            else:
-                root = os.path.join(data_root, 'sub-imagenet-20/val')
-            return datasets.ImageFolder(root = root,
-                                    transform = transform,
-                                    target_transform = target_transform)
-        # transform = transforms.Compose([ transforms.ToTensor(),  Resize((3, 224, 224)) ])
-
+        
         #transform = transforms.Compose([ transforms.ToTensor()])
-
-        transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize([0.4802, 0.4481, 0.3975], [0.2302, 0.2265, 0.2262]),
-        ])
+        if normalized == False:
+            transform = transforms.Compose([
+                transforms.ToTensor(),
+                #transforms.Normalize([0.4802, 0.4481, 0.3975], [0.2302, 0.2265, 0.2262]),
+            ])
+        else:
+            transform = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize([0.4802, 0.4481, 0.3975], [0.2302, 0.2265, 0.2262]),
+            ]) 
 
         image_datasets = {x: datasets.ImageFolder(imagenet_root+ '/' + x, transform)
                       for x in ['train', 'val', 'test']}
         train_set = image_datasets['train']
-        test_set = image_datasets['test']
-        
-        # train_set = get_imagenet(root=root, train=True, transform = transform) #, target_transform= None)
-        # test_set = get_imagenet(root=root, train=False, transform = transform) #, target_transform= None) 
-                                             
+        test_set = image_datasets['test']                             
     
-    if iid:
-        dict_users = cifar_iid(train_set, num_users)
- 
-    return train_set, test_set, dict_users
+    return train_set, test_set
 
 class DatasetSplit(Dataset):
     def __init__(self, dataset, idxs):

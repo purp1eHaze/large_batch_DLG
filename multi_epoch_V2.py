@@ -18,7 +18,7 @@ from skimage.exposure import rescale_intensity
 from models.vision import LeNet, LeNet_Imagenet, AlexNet_Imagenet, AlexNet_Cifar#, ResNet18
 from utils.args import parser_args
 from utils.datasets import get_data
-from utils.sampling import label_to_onehot, cross_entropy_for_onehot, Classification, psnr, reconstruction_costs
+from utils.metrics import label_to_onehot, cross_entropy_for_onehot, Classification, psnr, reconstruction_costs
 
 torch.backends.cudnn.benchmark = True
 torch.backends.cudnn.deterministic = True
@@ -266,7 +266,7 @@ if __name__ == '__main__':
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
                                                         milestones=[args.epochs // 2.667, args.epochs  // 1.6,
 
-                                                                    args.epochs  // 1.142], gamma=0.1)   # 3/8 5/8 7/8
+                                                                    args.epochs  // 1.142], gamma=0.3)   # 3/8 5/8 7/8
 
     loss_dlg = torch.nn.CrossEntropyLoss(reduction='mean')
    
@@ -299,15 +299,15 @@ if __name__ == '__main__':
         avg_loss /= len(loss)
 
         if (iters+1) % args.epoch_interval== 0:  #default = 10
-            denormal_ground_truth  = torch.clamp(ground_truth * ds + dm, 0, 1) # denormalized
-            denormal_dummy_data  = torch.clamp(dummy_data * ds + dm, 0, 1) # denormalized
+            #denormal_ground_truth  = torch.clamp(ground_truth * ds + dm, 0, 1) # denormalized
+            #denormal_dummy_data  = torch.clamp(dummy_data * ds + dm, 0, 1) # denormalized
             rec_mse = MSE(ground_truth.cpu().detach().numpy(), dummy_data.cpu().detach().numpy())
             tvloss = TVloss(dummy_data)
             print(iters, "gradloss: %.4f"  % avg_loss, "mseloss: %.5f" % rec_mse, "tvloss-%.5f" % tvloss)
             
             #history.append(denormal_ground_truth.cpu())
-            if ((iters+1)/args.epochs > 0.6):
-                history.append(denormal_dummy_data.cpu())
+            if ((iters+1)/args.epochs > 0.7):
+                history.append(dummy_data.cpu())
 
     subimage_size = len(history)
     # save image

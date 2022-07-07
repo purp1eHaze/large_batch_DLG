@@ -4,7 +4,7 @@ def parser_args():
 
     parser = argparse.ArgumentParser(description='Deep Leakage from Gradients.')
 
-    parser.add_argument('--index', type=int, default="25",
+    parser.add_argument('--index', type=int, default="26",
                         help='the index for leaking images on CIFAR.')
     # parser.add_argument('--image', type=str,default="",
     #                     help='the path to customized image.')
@@ -31,6 +31,12 @@ def parser_args():
     parser.add_argument('--model', type=str, default='alexnet', choices=['alexnet', 'resnet', 'lenet'],
                         help='model architecture name')
     
+    parser.add_argument('--mode', type=str, default='random', choices=['random', 'trained'],
+                        help='trained model or random model')
+    
+    parser.add_argument('--attack_iters', type=int, default=10,
+                        help="iteration number for attack")
+    
     parser.add_argument('--dataset', type=str, default='cifar10', choices=['cifar10', 'cifar100', 'imagenet'], help="name of dataset")
 
     parser.add_argument('--num_classes', default=10, type=int)
@@ -47,7 +53,7 @@ def parser_args():
     parser.add_argument('--iid', action='store_true', default =True,
                         help='dataset iid or not')
 
-    parser.add_argument('--normalized', action='store_true', default =True,
+    parser.add_argument('--normalized', action='store_true', default =False,
                         help='normalized or not')
 
     parser.add_argument('--optim', type=str, default='sgd',

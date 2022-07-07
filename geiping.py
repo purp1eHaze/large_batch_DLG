@@ -11,8 +11,8 @@ import time
 import os
 from utils.datasets import get_data
 from torch.utils.data import DataLoader
-from models.vision import LeNet, LeNet_Imagenet, AlexNet_Imagenet, AlexNet_Cifar#, ResNet18
-from utils.sampling import Loss, label_to_onehot, cross_entropy_for_onehot, Classification, psnr
+from models.vision import LeNet, LeNet_Imagenet, AlexNet_Imagenet, AlexNet_Cifar, ResNet18
+from utils.metrics import Loss, label_to_onehot, cross_entropy_for_onehot, Classification, psnr
 
 torch.backends.cudnn.benchmark = True
 torch.backends.cudnn.deterministic = True
@@ -37,10 +37,9 @@ if __name__ == "__main__":
     # Prepare for training
     # Get data:
     #loss_fn, trainloader, validloader = inversefed.construct_dataloaders(args.dataset, defs, data_path=args.data_path)
-    dst, test_set, dict_users = get_data(dataset=args.dataset,
-                                                    data_root = args.data_path,
-                                                    iid = True,
-                                                    num_users = 10)
+    dst, test_set = get_data(dataset=args.dataset,
+                                                    data_root=args.data_path,
+                                                    normalized=True)
     local_train_ldr = DataLoader(dst, batch_size = 32, shuffle=False, num_workers=2)
     if args.dataset == "imagenet":
         num_classes = 20
@@ -69,8 +68,11 @@ if __name__ == "__main__":
             net = AlexNet_Cifar(num_classes=num_classes, input_size = input_size).to(**setup)
     if args.model == "resnet":
         if args.dataset == "imagenet":
-            net = torchvision.models.resnet18(True)
-          #  net = ResNet18(num_classes=num_classes, imagenet = True).to(**setup)
+            #net_ = torchvision.models.resnet18(True)
+            #print(net_)
+            #net = ResNet18(num_classes=num_classes, imagenet = True).to(**setup)
+            #print(net)
+            net = torchvision.models.resnet18(num_classes =20, pretrained=False).to(**setup)
         else:
             net = ResNet18(num_classes=num_classes, imagenet = False).to(**setup)
     model = net 

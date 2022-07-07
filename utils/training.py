@@ -7,7 +7,7 @@ from torch.autograd import grad
 import torchvision
 from torchvision import models, datasets, transforms
 
-from utils.sampling import label_to_onehot, cross_entropy_for_onehot
+from utils.metrics import label_to_onehot, cross_entropy_for_onehot
 
 def accuracy(output, target, topk=(1,)):
     with torch.no_grad():

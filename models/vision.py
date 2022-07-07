@@ -98,17 +98,17 @@ class AlexNet_Imagenet(nn.Module):
             nn.ReLU(inplace=True),
             nn.Linear(4096, num_classes),
         )
-        for layer in self.features:
-            if isinstance(layer, nn.Conv2d):
-                params.append(layer.weight)
-                params.append(layer.bias)
+        # for layer in self.features:
+        #     if isinstance(layer, nn.Conv2d):
+        #         params.append(layer.weight)
+        #         params.append(layer.bias)
 
-        for layer in self.classifier:
-            if isinstance(layer, nn.Linear):
-                params.append(layer.weight)
-                params.append(layer.bias)
+        # for layer in self.classifier:
+        #     if isinstance(layer, nn.Linear):
+        #         params.append(layer.weight)
+        #         params.append(layer.bias)
         
-        self._load_pretrained_from_torch(params)
+        #self._load_pretrained_from_torch(params)
 
     def _load_pretrained_from_torch(self, params):
         # load a pretrained alexnet from torchvision
@@ -184,23 +184,183 @@ class AlexNet_Cifar(nn.Module):
         return x
 
 
-def conv3x3(in_planes: int, out_planes: int, stride: int = 1, groups: int = 1, dilation: int = 1) -> nn.Conv2d:
-    """3x3 convolution with padding"""
-    return nn.Conv2d(
-        in_planes,
-        out_planes,
-        kernel_size=3,
-        stride=stride,
-        padding=dilation,
-        groups=groups,
-        bias=False,
-        dilation=dilation,
-    )
+
+class ResBlock(nn.Module):
+    def __init__(self, inchannel, outchannel, stride=1):
+        super(ResBlock, self).__init__()
+        #这里定义了残差块内连续的2个卷积层
+        self.left = nn.Sequential(
+            nn.Conv2d(inchannel, outchannel, kernel_size=3, stride=stride, padding=1, bias=False),
+            nn.BatchNorm2d(outchannel),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(outchannel, outchannel, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.BatchNorm2d(outchannel)
+        )
+        self.shortcut = nn.Sequential()
+        if stride != 1 or inchannel != outchannel:
+            #shortcut，这里为了跟2个卷积层的结果结构一致，要做处理
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(inchannel, outchannel, kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(outchannel)
+            )
+            
+    def forward(self, x):
+        out = self.left(x)
+        #将2个卷积层的输出跟处理过的x相加，实现ResNet的基本结构
+        out = out + self.shortcut(x)
+        out = F.relu(out)
+        
+        return out
+
+class ResNet18(nn.Module):
+    def __init__(self, num_classes=10, imagenet = True):
+        super(ResNet18, self).__init__()
+        self.inchannel = 64
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False),
+            nn.BatchNorm2d(64),
+            nn.ReLU()
+        )
+        self.layer1 = self.make_layer(ResBlock, 64, 2, stride=1)
+        self.layer2 = self.make_layer(ResBlock, 128, 2, stride=2)
+        self.layer3 = self.make_layer(ResBlock, 256, 2, stride=2)        
+        self.layer4 = self.make_layer(ResBlock, 512, 2, stride=2)
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))        
+        self.fc = nn.Linear(512, num_classes)
+        #self.fc = nn.Linear(25088, num_classes)
+    #这个函数主要是用来，重复同一个残差块    
+    def make_layer(self, block, channels, num_blocks, stride):
+        strides = [stride] + [1] * (num_blocks - 1)
+        layers = []
+        for stride in strides:
+            layers.append(block(self.inchannel, channels, stride))
+            self.inchannel = channels
+        return nn.Sequential(*layers)
+    
+    def forward(self, x):
+        #在这里，整个ResNet18的结构就很清晰了
+        out = self.conv1(x)
+        out = self.layer1(out)
+        out = self.layer2(out)
+        out = self.layer3(out)
+        out = self.layer4(out)
+        #out = F.avg_pool2d(out, 4)
+        #out = out.view(out.size(0), -1)
+
+        out = self.avgpool(out)
+        out = torch.flatten(out, 1)
+        
+        out = self.fc(out)
+        return out
 
 
-def conv1x1(in_planes: int, out_planes: int, stride: int = 1) -> nn.Conv2d:
-    """1x1 convolution"""
-    return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
+
+# def get_convblock():
+#     #print(passport_kwargs)
+
+#     def convblock_(*args, **kwargs):
+#         return ConvBlock(*args, **kwargs)
+
+#     return convblock_
+
+
+# class BasicBlock(nn.Module):
+#     expansion = 1
+
+#     def __init__(self, in_planes, planes, stride=1):#(512, 512, 2) (512, 512, 1)
+#         super(BasicBlock, self).__init__()
+
+#         self.convbnrelu_1 = get_convblock()(in_planes, planes, 3, stride, 1)
+#         self.convbn_2 = get_convblock()(planes, planes, 3, 1, 1)
+#         self.shortcut = nn.Sequential()
+#         if stride != 1 or in_planes != self.expansion * planes:
+#             self.shortcut = get_convblock()(in_planes, self.expansion * planes, 1, stride, 0) # input, output, kernel_size=1
+
+#     def forward(self, x):
+        
+#         out = self.convbnrelu_1(x)
+#         out = self.convbn_2(out)
+
+#         if not isinstance(self.shortcut, nn.Sequential):
+            
+#             out = out + self.shortcut(x)
+
+#         else: # if self.shortcut == nn.Sequential 
+#             out = out + x
+#         out = F.relu(out)
+#         return out
+
+# class ResNet(nn.Module):
+#     def __init__(self, block, num_blocks, num_classes=100, imagenet = True): #BasicPrivateBlock, [2, 2, 2, 2], **model_kwargs
+#         super(ResNet, self).__init__()
+#         self.in_planes = 64
+#         self.num_blocks = num_blocks
+
+#         self.convbnrelu_1 = ConvBlock(3, 64, 3, 1, 1)
+#         self.layer1 = self._make_layer(block, 64, num_blocks[0], stride=1)
+#         self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2)
+#         self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
+#         self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
+#         if imagenet == True:
+#             self.linear = nn.Linear(25088, num_classes)
+#         else:
+#             self.linear = nn.Linear(512 * block.expansion, num_classes)
+
+#     def _make_layer(self, block, planes, num_blocks, stride): #BasicPrivateBlock, planes = 512, numblocks = 2, stride =2, **model_kwargs
+#         strides = [stride] + [1] * (num_blocks - 1) # [2] + [1]*1 = [2, 1]
+#         layers = []
+#         for i, stride in enumerate(strides): #stride = 2 & 1
+#             layers.append(block(self.in_planes, planes, stride)) # (512, 512, 2)
+#             self.in_planes = planes * block.expansion
+#         return nn.Sequential(*layers)
+
+#     def forward(self, x):
+       
+#         out = self.convbnrelu_1(x)
+
+#         for block in self.layer1:
+#             out = block(out)
+#         for block in self.layer2:
+#             out = block(out)
+#         for block in self.layer3:
+#             out = block(out)
+#         for block in self.layer4:
+#             out = block(out)
+
+#         out = F.avg_pool2d(out, 4)
+#         out = out.view(out.size(0), -1)
+#         # print(out.shape)
+#         # exit()
+#         out = self.linear(out)
+
+#         return out
+
+# def ResNet18(**model_kwargs):
+#     return ResNet(BasicBlock, [2, 2, 2, 2], **model_kwargs)
+
+
+
+
+
+
+
+# def conv3x3(in_planes: int, out_planes: int, stride: int = 1, groups: int = 1, dilation: int = 1) -> nn.Conv2d:
+#     """3x3 convolution with padding"""
+#     return nn.Conv2d(
+#         in_planes,
+#         out_planes,
+#         kernel_size=3,
+#         stride=stride,
+#         padding=dilation,
+#         groups=groups,
+#         bias=False,
+#         dilation=dilation,
+#     )
+
+
+# def conv1x1(in_planes: int, out_planes: int, stride: int = 1) -> nn.Conv2d:
+#     """1x1 convolution"""
+#     return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
 
 
 # class BasicBlock(nn.Module):
@@ -567,91 +727,6 @@ def conv1x1(in_planes: int, out_planes: int, stride: int = 1) -> nn.Conv2d:
 
 
 
-
-
-
-# def get_convblock():
-#     #print(passport_kwargs)
-
-#     def convblock_(*args, **kwargs):
-#         return ConvBlock(*args, **kwargs)
-
-#     return convblock_
-
-
-# class BasicBlock(nn.Module):
-#     expansion = 1
-
-#     def __init__(self, in_planes, planes, stride=1):#(512, 512, 2) (512, 512, 1)
-#         super(BasicBlock, self).__init__()
-
-#         self.convbnrelu_1 = get_convblock()(in_planes, planes, 3, stride, 1)
-#         self.convbn_2 = get_convblock()(planes, planes, 3, 1, 1)
-#         self.shortcut = nn.Sequential()
-#         if stride != 1 or in_planes != self.expansion * planes:
-#             self.shortcut = get_convblock()(in_planes, self.expansion * planes, 1, stride, 0) # input, output, kernel_size=1
-
-#     def forward(self, x):
-        
-#         out = self.convbnrelu_1(x)
-#         out = self.convbn_2(out)
-
-#         if not isinstance(self.shortcut, nn.Sequential):
-            
-#             out = out + self.shortcut(x)
-
-#         else: # if self.shortcut == nn.Sequential 
-#             out = out + x
-#         out = F.relu(out)
-#         return out
-
-# class ResNet(nn.Module):
-#     def __init__(self, block, num_blocks, num_classes=100, imagenet = True): #BasicPrivateBlock, [2, 2, 2, 2], **model_kwargs
-#         super(ResNet, self).__init__()
-#         self.in_planes = 64
-#         self.num_blocks = num_blocks
-
-#         self.convbnrelu_1 = ConvBlock(3, 64, 3, 1, 1)
-#         self.layer1 = self._make_layer(block, 64, num_blocks[0], stride=1)
-#         self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2)
-#         self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
-#         self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
-#         if imagenet == True:
-#             self.linear = nn.Linear(25088, num_classes)
-#         else:
-#             self.linear = nn.Linear(512 * block.expansion, num_classes)
-
-#     def _make_layer(self, block, planes, num_blocks, stride): #BasicPrivateBlock, planes = 512, numblocks = 2, stride =2, **model_kwargs
-#         strides = [stride] + [1] * (num_blocks - 1) # [2] + [1]*1 = [2, 1]
-#         layers = []
-#         for i, stride in enumerate(strides): #stride = 2 & 1
-#             layers.append(block(self.in_planes, planes, stride)) # (512, 512, 2)
-#             self.in_planes = planes * block.expansion
-#         return nn.Sequential(*layers)
-
-#     def forward(self, x):
-       
-#         out = self.convbnrelu_1(x)
-
-#         for block in self.layer1:
-#             out = block(out)
-#         for block in self.layer2:
-#             out = block(out)
-#         for block in self.layer3:
-#             out = block(out)
-#         for block in self.layer4:
-#             out = block(out)
-
-#         out = F.avg_pool2d(out, 4)
-#         out = out.view(out.size(0), -1)
-#         # print(out.shape)
-#         # exit()
-#         out = self.linear(out)
-
-#         return out
-
-# def ResNet18(**model_kwargs):
-#     return ResNet(BasicBlock, [2, 2, 2, 2], **model_kwargs)
 
 
 
