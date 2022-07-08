@@ -10,8 +10,6 @@ def parser_args():
     #                     help='the path to customized image.')
 
     # ========================= deep leakage parameters ========================
-    parser.add_argument('--num_users', type=int, default=20,
-                        help="number of users: K")
 
     parser.add_argument('--epochs', type=int, default=300,
                         help='attack epochs')
@@ -19,13 +17,19 @@ def parser_args():
     parser.add_argument('--epoch_interval', type=int, default=10,
                         help="interval for saving")
 
-    parser.add_argument('--batch_size', type=int, default=4,
+    parser.add_argument('--bs', type=int, default=4,
                         help="batch size for attack")
 
     parser.add_argument('--lr', type=float, default= 1,
                         help="learning rate for dlg")
 
     parser.add_argument('--cost_fn', default='sim',  choices=['simlocal', 'l2', 'sim'], type=str, help='Choice of cost function.')
+
+    parser.add_argument('--tv', type=float, default= 1e-4,
+                        help="TV loss parameter for dlg")
+
+    parser.add_argument('--optim', type=str, default='sgd',
+                        help='optimizer: [sgd, adam, LBFGS, geiping]')
 
     # ============================ Model arguments ===================================
     parser.add_argument('--model', type=str, default='alexnet', choices=['alexnet', 'resnet', 'lenet'],
@@ -36,7 +40,10 @@ def parser_args():
     
     parser.add_argument('--attack_iters', type=int, default=10,
                         help="iteration number for attack")
-    
+    parser.add_argument('--start_attack_iters', type=int, default=0,
+                        help="start iteration number for attack")
+    parser.add_argument('--avg_type', default='avg', type=str)
+
     parser.add_argument('--dataset', type=str, default='cifar10', choices=['cifar10', 'cifar100', 'imagenet'], help="name of dataset")
 
     parser.add_argument('--num_classes', default=10, type=int)
@@ -50,14 +57,8 @@ def parser_args():
     parser.add_argument('--exp-id', type=int, default=1,
                         help='experiment id')
 
-    parser.add_argument('--iid', action='store_true', default =True,
-                        help='dataset iid or not')
-
     parser.add_argument('--normalized', action='store_true', default =False,
                         help='normalized or not')
-
-    parser.add_argument('--optim', type=str, default='sgd',
-                        help='optimizer: [sgd, adam]')
 
     
     args = parser.parse_args()
