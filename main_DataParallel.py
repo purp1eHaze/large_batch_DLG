@@ -59,7 +59,9 @@ if __name__ == '__main__':
     device = "cpu"
     if torch.cuda.is_available():
         device = "cuda"
-        device_ids = [ 1, 2,  3]
+        device_ids = [1, 2, 3]
+
+
         print("Running on %s" % device)
     
     # prepare dataset
@@ -84,8 +86,8 @@ if __name__ == '__main__':
     
     lr = config["lr"]
     if config['normalized'] == True:
-        dm = torch.as_tensor([0.4802, 0.4481, 0.3975])[:, None, None].to(device)
-        ds = torch.as_tensor([0.2302, 0.2265, 0.2262])[:, None, None].to(device)
+        dm = torch.as_tensor([0.4802, 0.4481, 0.3975])[:, None, None].cuda(device=device_ids[0])
+        ds = torch.as_tensor([0.2302, 0.2265, 0.2262])[:, None, None].cuda(device=device_ids[0])
 
     dst, test_set = get_data(dataset=args.dataset, data_root = args.data_root, normalized = config['normalized'])
     local_train_ldr = DataLoader(dst, batch_size = 32, shuffle=False, num_workers=2) 
@@ -116,6 +118,8 @@ if __name__ == '__main__':
     if args.mode == "random": 
         for i in range(args.attack_iters):
             net = get_model_fn()
+            net = torch.nn.DataParallel(net, device_ids=device_ids)
+            #print(net.state_dict())
             model_time.append(net.state_dict())
 
     if args.mode == "trained":
@@ -141,7 +145,8 @@ if __name__ == '__main__':
             model_dict = torch.load(dir+ "model_"+str(i)+".pth")['model']
             model_time.append(model_dict)
 
-    net = net.to(device)
+    #net = torch.nn.DataParallel(net, device_ids=device_ids)
+    net = net.cuda(device=device_ids[0])
 
     # make image folder
     if not os.path.exists("images/"+args.model+"_"+args.dataset):
@@ -156,24 +161,23 @@ if __name__ == '__main__':
     criterion = cross_entropy_for_onehot
 
     img_index = args.index
-    gt_data = dst[img_index][0].to(device) # 0 for label, 1 for label
-    gt_label = torch.Tensor([dst[img_index][1]]).long().to(device)
+    gt_data = dst[img_index][0].cuda(device=device_ids[0]) # 0 for label, 1 for label
+    gt_label = torch.Tensor([dst[img_index][1]]).long().cuda(device=device_ids[0])
     gt_label = gt_label.view(1, )
     data_size = gt_data.size()
     gt_data = gt_data.view(1, *data_size)
     
     # batch selection to be attacked
     for i in range(args.bs-1):
-        gt_data = torch.cat([gt_data, dst[img_index+i+1][0].view(1, *data_size).to(device)], dim=0)
-        gt_label = torch.cat([gt_label, torch.Tensor([dst[img_index+i+1][1]]).long().view(1, ).to(device)], dim=0)
+        gt_data = torch.cat([gt_data, dst[img_index+i+1][0].view(1, *data_size).cuda(device=device_ids[0])], dim=0)
+        gt_label = torch.cat([gt_label, torch.Tensor([dst[img_index+i+1][1]]).long().view(1, ).cuda(device=device_ids[0])], dim=0)
 
     gt_onehot_label = label_to_onehot(gt_label, num_classes= num_classes)
 
     # generate dummy data and label
-    dummy_data = torch.rand(gt_data.size()).to(device).requires_grad_(True)
+    dummy_data = torch.rand(gt_data.size()).cuda(device=device_ids[0]).requires_grad_(True)
     #dummy_label = torch.rand(gt_onehot_label.size()).to(device).requires_grad_(True)
     dummy_label = gt_onehot_label
-
 
     history = []
     x_avg = dummy_data.clone().detach()
@@ -191,6 +195,7 @@ if __name__ == '__main__':
         y = criterion(pred, gt_onehot_label)
         dy_dx = torch.autograd.grad(y, net.parameters())
         original_dy_dx.append(list((_.detach().clone().cpu() for _ in dy_dx)))
+        print(i)
 
 
     if config['optim'] == "geiping":
@@ -237,11 +242,10 @@ if __name__ == '__main__':
                 #     for j in range(len(original_dy_dx)):
                 #         plot_his(original_dy_dx[j])
                 #         plt.savefig('hists/' + args.model + '_' + args.dataset + '/' + str(iters) + "_"+str(j) + '.png')
-                #         plt.close()
-
+                #         plt.close()   
                 target_dy_dx = []
                 for grad in original_dy_dx[i]:        
-                    target_dy_dx.append(grad.cuda())
+                    target_dy_dx.append(grad.cuda(device=device_ids[0]))
 
                 def closure():
                     optimizer.zero_grad()
