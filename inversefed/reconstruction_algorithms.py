@@ -9,6 +9,32 @@ from copy import deepcopy
 from functools import partial
 import time
 
+class BNStatisticsHook():
+    '''
+    Implementation of the forward hook to track feature statistics and compute a loss on them.
+    Will compute mean and variance, and will use l2 as a loss
+    '''
+    def __init__(self, module):
+        self.hook = module.register_forward_hook(self.hook_fn)
+
+    def hook_fn(self, module, input, output):
+        # hook co compute deepinversion's feature distribution regularization
+        nch = input[0].shape[1]
+        mean = input[0].mean([0, 2, 3])
+        var = input[0].permute(1, 0, 2, 3).contiguous().view([nch, -1]).var(1, unbiased=False)
+
+        #forcing mean and variance to match between two distributions
+        #other ways might work better, i.g. KL divergence
+        # r_feature = torch.norm(module.running_var.data - var, 2) + torch.norm(
+        #     module.running_mean.data - mean, 2)
+        mean_var = [mean, var]
+
+        self.mean_var = mean_var
+        # must have no output
+
+    def close(self):
+        self.hook.remove()
+
 class MetaMonkey(torch.nn.Module):
     """Trace a networks and then replace its module calls with functional calls.
 
@@ -254,6 +280,9 @@ class GradientReconstructor():
                 closure = self._gradient_closure(optimizer, x_trial, input_data, labels)
                 
                 rec_loss = optimizer.step(closure)
+
+                print(optimizer.state_dict()['state'])
+                #print(optimizer.state_dict()['param_groups'])    
                 
                 if self.config['lr_decay']:
                     scheduler.step()

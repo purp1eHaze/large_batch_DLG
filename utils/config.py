@@ -1,5 +1,21 @@
 from locale import normalize
 
+def Setup_Config(args):
+    if args.optim == "adam": 
+        config = Adam_Config(args) 
+    if args.optim == "LBFGS":     
+        config = LBFGS_Config(args)
+    if args.optim == "SGD":
+        config = SGD_Config(args)
+    if args.optim == "geiping":
+        config = Geiping_Config(args)
+    if args.optim == "BN":
+        config = BN_Config(args)
+    if args.optim == "GC":
+        config == GC_Config(args)
+    if args.optim == "gaussian":
+        config = Gaussian_Config(args)
+    return config
 
 def LBFGS_Config(args): 
     return dict(
@@ -59,3 +75,83 @@ def Geiping_Config(args):
             filter="none",
             scoring_choice="loss",
             lr_decay=True)
+
+def Zhu_Config(args):
+    return dict(signed=True,
+                boxed=True,
+                cost_fn="l2",
+                indices="def",
+                weights="equal",
+                lr=1,
+                optim="LBFGS",
+                normalized = False,
+                restarts=1,
+                epochs= 300,
+                interval= 10,
+                total_variation=0,
+                init="randn",
+                filter="none",
+                lr_decay=False,
+                scoring_choice="loss",
+    )
+
+def Gaussian_Config(args):
+    return dict(signed=True,
+                boxed=True,
+                cost_fn="gaussian",
+                indices="def",
+                weights="equal",
+                lr=1,
+                optim="LBFGS",
+                normalized = False,
+                restarts=1,
+                epochs= 300,
+                interval= 10,
+                total_variation=0,
+                init="randn",
+                filter="none",
+                lr_decay=False,
+                scoring_choice="loss",
+    )
+
+def BN_Config(args):
+    return dict(signed=True,
+                boxed=True,
+                cost_fn='l2',
+                indices='def',
+                weights='equal',
+                lr=0.1,
+                optim='adam',
+                normalized = False,
+                restarts=1,
+                epochs= 6000,
+                interval= 500,
+                total_variation=1e-1,
+                bn_stat=1e-1,
+                image_norm=0,
+                group_lazy=0,
+                init='randn',
+                lr_decay=True,
+                dataset=args.dataset,
+                )
+
+def GC_Config(args):
+    return dict(signed=True,
+                boxed=True,
+                cost_fn='l2',
+                indices='def',
+                weights='equal',
+                lr=0.1,
+                optim='adam',
+                normalized = False,
+                restarts=1,
+                epochs= 6000,
+                interval= 500,
+                total_variation=1e-1,
+                bn_stat=0,
+                image_norm=0,
+                group_lazy=1e-1,
+                init='randn',
+                lr_decay=True,
+                dataset=args.dataset,
+                )

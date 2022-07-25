@@ -19,7 +19,7 @@ from models.vision import LeNet, LeNet_Imagenet, AlexNet_Imagenet, AlexNet_Cifar
 from utils.args import parser_args
 from utils.datasets import get_data
 from utils.metrics import label_to_onehot, cross_entropy_for_onehot, TVloss, TVloss_l1, MSE,  reconstruction_costs, Classification
-from utils.config import Adam_Config, LBFGS_Config, SGD_Config, Geiping_Config
+from utils.config import Setup_Config
 
 torch.backends.cudnn.benchmark = True
 torch.backends.cudnn.deterministic = True
@@ -73,14 +73,8 @@ if __name__ == '__main__':
         num_classes = 100
         input_size = 32
 
-    if args.optim == "adam": 
-        config = Adam_Config(args) 
-    if args.optim == "LBFGS":     
-        config = LBFGS_Config(args)
-    if args.optim == "SGD":
-        config = SGD_Config(args)
-    if args.optim == "geiping":
-        config = Geiping_Config(args)
+    config = Setup_Config(args)
+
     
     lr = config["lr"]
     if config['normalized'] == True:
@@ -193,7 +187,7 @@ if __name__ == '__main__':
         original_dy_dx.append(list((_.detach().clone().cpu() for _ in dy_dx)))
 
 
-    if config['optim'] == "geiping":
+    if config['optim'] == "geiping" or config['optim'] == "BN" or config['optim'] == "GC" or config['optim'] == "gaussian" or config['optim'] == "Zhu":
         net.eval()
         net.zero_grad()
         loss_fn = Classification() 

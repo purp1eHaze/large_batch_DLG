@@ -16,6 +16,7 @@ from torchvision import models, datasets, transforms
 from torch.utils.data import DataLoader
 from utils.training import local_update, test, accuracy
 from models.vision import LeNet, LeNet_Imagenet, AlexNet_Imagenet, AlexNet_Cifar, ResNet18
+from models.wideresnet import WideResNet 
 from utils.args import parser_args
 from utils.datasets import get_data
 from utils.metrics import label_to_onehot, cross_entropy_for_onehot, TVloss, TVloss_l1, MSE,  reconstruction_costs, Classification
@@ -108,7 +109,9 @@ if __name__ == '__main__':
         if args.model == "resnet":
             if args.dataset == "imagenet":
                 #net = ResNet18(num_classes=num_classes, imagenet = True).to(device)
-                model_fn = torchvision.models.resnet18(num_classes =10, pretrained=False)
+                
+                model_fn = WideResNet(depth=10, widen_factor=2, n_classes=10)
+                #model_fn = torchvision.models.resnet18(num_classes =10, pretrained=False)
             else:
                 model_fn = ResNet18(num_classes=num_classes, imagenet = False)
         return model_fn
@@ -233,6 +236,7 @@ if __name__ == '__main__':
                 # set optimizer for deep leakage
                 # optimizer = torch.optim.LBFGS([dummy_data, dummy_label], lr = args.lr)
                 optimizer = torch.optim.LBFGS([dummy_data], lr = lr,  max_iter=20)
+      
                 scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
                                                         milestones=[config['epochs'] // 2.667, config['epochs'] // 1.6,
                                                                     config['epochs'] // 1.142],
@@ -289,7 +293,7 @@ if __name__ == '__main__':
             if (iters+1) % config['interval'] == 0:  #default = 10
                 rec_mse = MSE(gt_data.cpu().detach().numpy(), dummy_data.cpu().detach().numpy())
                 tvloss = TVloss(dummy_data)
-                psnr = 10*math.log(1/rec_mse)
+                psnr = 10*math.log(1/rec_mse, 10)
                 print(iters, "gradloss: %.4f"  % avg_loss, "mseloss: %.5f" % rec_mse, "tvloss: %.5f" % tvloss, "PSNR: %.2f" % psnr)
                 if config['normalized'] == True:
                     denormal_dummy_data  = torch.clamp(dummy_data * ds + dm, 0, 1) # denormalized
