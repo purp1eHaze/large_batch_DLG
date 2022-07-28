@@ -18,8 +18,9 @@ from utils.training import local_update, test, accuracy
 from models.vision import LeNet, LeNet_Imagenet, AlexNet_Imagenet, AlexNet_Cifar, ResNet18
 from utils.args import parser_args
 from utils.datasets import get_data
-from utils.metrics import label_to_onehot, cross_entropy_for_onehot, TVloss, TVloss_l1, MSE,  reconstruction_costs, Classification
+from utils.metrics import label_to_onehot, cross_entropy_for_onehot, TVloss, MSE, reconstruction_costs, calculate_ssim, Classification
 from utils.config import Setup_Config
+from skimage.metrics import structural_similarity as ssim
 
 torch.backends.cudnn.benchmark = True
 torch.backends.cudnn.deterministic = True
@@ -66,20 +67,23 @@ if __name__ == '__main__':
     if args.dataset == "imagenet":
         num_classes = 10
         input_size = 224
+        img_shape = (3, 224, 224)
     if args.dataset == "cifar10":
         num_classes = 10
         input_size = 32
+        img_shape = (3, 32, 32)
     if args.dataset == "cifar100":
         num_classes = 100
         input_size = 32
+        img_shape = (3, 32, 32)
 
     config = Setup_Config(args)
 
     
     lr = config["lr"]
-    if config['normalized'] == True:
-        dm = torch.as_tensor([0.4802, 0.4481, 0.3975])[:, None, None].to(device)
-        ds = torch.as_tensor([0.2302, 0.2265, 0.2262])[:, None, None].to(device)
+    # if config['normalized'] == True:
+    dm = torch.as_tensor([0.4802, 0.4481, 0.3975])[:, None, None].to(device)
+    ds = torch.as_tensor([0.2302, 0.2265, 0.2262])[:, None, None].to(device)
 
     dst, test_set = get_data(dataset=args.dataset, data_root = args.data_root, normalized = config['normalized'])
     local_train_ldr = DataLoader(dst, batch_size = 32, shuffle=False, num_workers=2) 
@@ -99,6 +103,7 @@ if __name__ == '__main__':
                 model_fn = AlexNet_Cifar(num_classes=num_classes, input_size = input_size)
         if args.model == "resnet":
             if args.dataset == "imagenet":
+                #model_fn = torchvision.models.resnet18(True)
                 #net = ResNet18(num_classes=num_classes, imagenet = True).to(device)
                 model_fn = torchvision.models.resnet18(num_classes =10, pretrained=False)
             else:
@@ -150,55 +155,115 @@ if __name__ == '__main__':
     criterion = cross_entropy_for_onehot
 
     img_index = args.index
-    gt_data = dst[img_index][0].to(device) # 0 for label, 1 for label
-    gt_label = torch.Tensor([dst[img_index][1]]).long().to(device)
-    gt_label = gt_label.view(1, )
-    data_size = gt_data.size()
-    gt_data = gt_data.view(1, *data_size)
-    
-    # batch selection to be attacked
-    for i in range(args.bs-1):
-        gt_data = torch.cat([gt_data, dst[img_index+i+1][0].view(1, *data_size).to(device)], dim=0)
-        gt_label = torch.cat([gt_label, torch.Tensor([dst[img_index+i+1][1]]).long().view(1, ).to(device)], dim=0)
 
-    gt_onehot_label = label_to_onehot(gt_label, num_classes= num_classes)
+    if args.optim in ["geiping", "BN", "GC", "gaussian", "Zhu"]:
+        gt_data, gt_label = [], []
+        target_id_ = args.index
+        while len(gt_label) < args.bs:
+            img, label = local_train_ldr.dataset[target_id_]
+            target_id_ += 1
+            if label not in gt_label:
+                gt_label.append(torch.as_tensor((label,), device= "cuda"))
+                gt_data.append(img.to(device))
 
-    # generate dummy data and label
-    dummy_data = torch.rand(gt_data.size()).to(device).requires_grad_(True)
-    #dummy_label = torch.rand(gt_onehot_label.size()).to(device).requires_grad_(True)
-    dummy_label = gt_onehot_label
+        gt_data = torch.stack(gt_data)
+        gt_label = torch.cat(gt_label)
+        
+        # gt_data = torch.as_tensor(
+        #         np.array(Image.open("auto.jpg").resize((224, 224), Image.BICUBIC)) / 255, device ="cuda", dtype=torch.float
+        #     )
+        # gt_data = gt_data.permute(2, 0, 1).sub(dm).div(ds).unsqueeze(0).contiguous()
+
+        history = []
+
+    else:
+        gt_data = dst[img_index][0].to(device) # 0 for label, 1 for label
+        gt_label = torch.Tensor([dst[img_index][1]]).long().to(device)
+        gt_label = gt_label.view(1, )
+        data_size = gt_data.size()
+        gt_data = gt_data.view(1, *data_size)
+        
+        # batch selection to be attacked
+        for i in range(args.bs-1):
+            gt_data = torch.cat([gt_data, dst[img_index+i+1][0].view(1, *data_size).to(device)], dim=0)
+            gt_label = torch.cat([gt_label, torch.Tensor([dst[img_index+i+1][1]]).long().view(1, ).to(device)], dim=0)
+        gt_onehot_label = label_to_onehot(gt_label, num_classes= num_classes)
+
+        # generate dummy data and label
+        dummy_data = torch.rand(gt_data.size()).to(device).requires_grad_(True)
+        #dummy_label = torch.rand(gt_onehot_label.size()).to(device).requires_grad_(True)
+        dummy_label = gt_onehot_label
+
+        history = []
+        x_avg = dummy_data.clone().detach()
+        #y_avg = dummy_label.clone().detach()
+
+        # store original gradient
+        original_dy_dx = []
+        for i in range(len(model_time)):
+            net.load_state_dict(model_time[i])
+            net.eval()
+            pred = net(gt_data)
+            y = criterion(pred, gt_onehot_label)
+            dy_dx = torch.autograd.grad(y, net.parameters())
+            original_dy_dx.append(list((_.detach().clone().cpu() for _ in dy_dx)))
 
 
-    history = []
-    x_avg = dummy_data.clone().detach()
-    #y_avg = dummy_label.clone().detach()
-
-    # set optimizer for deep leakage
-    #optimizer = torch.optim.LBFGS([dummy_data, dummy_label], lr = 1)
-
-    # store original gradient
-    original_dy_dx = []
-    for i in range(len(model_time)):
-        net.load_state_dict(model_time[i])
-        net.eval()
-        pred = net(gt_data)
-        y = criterion(pred, gt_onehot_label)
-        dy_dx = torch.autograd.grad(y, net.parameters())
-        original_dy_dx.append(list((_.detach().clone().cpu() for _ in dy_dx)))
-
-
-    if config['optim'] == "geiping" or config['optim'] == "BN" or config['optim'] == "GC" or config['optim'] == "gaussian" or config['optim'] == "Zhu":
+    if args.optim in ["geiping", "BN", "GC", "gaussian", "Zhu"]: #bassline 
         net.eval()
         net.zero_grad()
         loss_fn = Classification() 
-        target_loss, _, _ = loss_fn(net(gt_data), gt_onehot_label)
+
+        bn_l, bn_prior = [], []
+        for module in net.modules():
+            if isinstance(module, nn.BatchNorm2d):
+                bn_l.append(inversefed.gradientinversion.BNStatisticsHook(module))
+
+        # for module in net.modules():
+        #     if isinstance(module, nn.BatchNorm2d):
+        #         def hook_fn(module, input, output):
+        #             # print("-------------")
+
+        #             # hook co compute deepinversion's feature distribution regularization
+        #             nch = input[0].shape[1]
+        #             mean = input[0].mean([0, 2, 3])
+        #             var = input[0].permute(1, 0, 2, 3).contiguous().view([nch, -1]).var(1, unbiased=False)
+
+        #             #forcing mean and variance to match between two distributions
+        #             #other ways might work better, i.g. KL divergence
+        #             # r_feature = torch.norm(module.running_var.data - var, 2) + torch.norm(
+        #             #     module.running_mean.data - mean, 2)
+        #             #mean_var = [mean.data.cpu(), var.data.cpu()]
+        #             mean_var = [mean, var]
+        #             bn_prior.append(mean_var)
+        #         hook = module.register_forward_hook(hook_fn)
+        #         hook.remove()
+
+        target_loss, _, _ = loss_fn(net(gt_data), gt_label)
         input_gradient = torch.autograd.grad(target_loss, net.parameters())
         input_gradient = [grad.detach() for grad in input_gradient]
         full_norm = torch.stack([g.norm() for g in input_gradient]).mean()
+        print(f"Full gradient norm is {full_norm:e}.")
 
-        rec_machine = inversefed.GradientReconstructor(net, (dm, ds), config, num_images=args.bs)
+        for i, mod in enumerate(bn_l):
+            mean_var = mod.mean_var[0].detach(), mod.mean_var[1].detach()
+            bn_prior.append(mean_var)
+
+        rec_machine = inversefed.GradientReconstructor(net, (dm, ds), config, num_images=args.bs, bn_prior=bn_prior)
         # need some reshaping 
-        history, stats = rec_machine.reconstruct(input_gradient, gt_label, img_shape=(1, 3, 224, 224), dryrun=False)
+       
+        history, stats = rec_machine.reconstruct(input_gradient, gt_label, img_shape= img_shape, dryrun=False)
+        
+       
+        if config['normalized'] == True:
+            print("------")
+            history = torch.clamp(history * ds + dm, 0, 1) # denormalized
+
+        for i in range(args.bs):
+            plt.figure()
+            plt.imshow(tt(history[i]))
+            plt.savefig("images/"+ args.model + '_' + args.dataset + '/' + "optim_" +args.optim + "_mode_" +args.mode + "_cost_fn_" +args.cost_fn + "_" +str(i)+"_whole.png")
+            plt.close()
 
     else:
         for iters in range(config['epochs']): # default =300
@@ -288,45 +353,69 @@ if __name__ == '__main__':
                     history.append(dummy_data.cpu())
 
 
-    for i in range(args.bs):
-        plt.figure()
-        plt.imshow(tt(history[-1][i]))
-        plt.savefig("images/"+ args.model + '_' + args.dataset + '/' + "optim_" +args.optim + "_mode_" +args.mode + "_cost_fn_" +args.cost_fn + "_" +str(i)+"_whole.png")
+        for i in range(args.bs):
+            plt.figure()
+            plt.imshow(tt(history[-1][i]))
+            plt.savefig("images/"+ args.model + '_' + args.dataset + '/' + "optim_" +args.optim + "_mode_" +args.mode + "_cost_fn_" +args.cost_fn + "_" +str(i)+"_whole.png")
+            plt.close()
+
+        plt.figure(figsize=(12, np.sqrt(args.bs) * 8))
+        for j in range(args.bs):
+            for i in range(int(config['epochs']/config['interval'])):
+                plt.subplot(int(config['epochs']/config['interval'] * args.bs  / 10), 10,
+                            int(config['epochs']/config['interval']) * j + i + 1)
+                plt.imshow(tt(history[i][j]))
+                plt.axis('off')
+        plt.title("rec_MSE-%.4f" % (rec_mse))
+        plt.savefig('images/' + args.model + '_' + args.dataset + '/' + args.avg_type + '_bs_' + str(
+            args.bs) + '_iter' + str(
+            args.attack_iters) + 'start_' + str(args.start_attack_iters) + "_" +args.optim + "_mode_" +args.mode + "_" +args.cost_fn + '.png')
         plt.close()
 
-    plt.figure(figsize=(12, np.sqrt(args.bs) * 8))
-    for j in range(args.bs):
-        for i in range(int(config['epochs']/config['interval'])):
-            plt.subplot(int(config['epochs']/config['interval'] * args.bs  / 10), 10,
-                        int(config['epochs']/config['interval']) * j + i + 1)
-            plt.imshow(tt(history[i][j]))
-            plt.axis('off')
-    plt.title("rec_MSE-%.4f" % (rec_mse))
-    plt.savefig('images/' + args.model + '_' + args.dataset + '/' + args.avg_type + '_bs_' + str(
-        args.bs) + '_iter' + str(
-        args.attack_iters) + 'start_' + str(args.start_attack_iters) + "_" +args.optim + "_mode_" +args.mode + "_" +args.cost_fn + '.png')
-    plt.close()
+    # save to table 
+    test_mse, test_psnr, test_ssim = [], [], []
+    for i in range(args.bs):
+        mse = (history [i].cpu() - gt_data[i].cpu()).pow(2).mean().item()
+        test_mse.append()
+        test_psnr.append(10 * math.log(1/mse, 10))
+        # test_ssim = calculate_ssim(history[i], gt_data[i])
+        test_ssim.append(ssim(history[i].cpu(), gt_data[i].cpu()))
+
+    mses, psnrs, ssims = np.nan_to_num(np.array(test_mse)), np.nan_to_num(np.array(test_psnr)), np.nan_to_num(np.array(test_ssim))
+    mse_mean, psnr_mean, ssim_mean = mses.mean(), psnrs.mean(), ssims.mean()
+    mse_std, psnr_std, ssim_std = np.std(mses), np.std(psnrs), np.std(ssims)
+    mse_max, psnr_max, ssim_max = mses.max(), psnrs.max(), ssims.max()
+    mse_min, psnr_min, ssim_min = mses.min(), psnrs.min(), ssims.min()
+    mse_median, psnr_median, ssim_median = np.median(mses), np.median(psnrs), np.median(ssims)
+
+    inversefed.utils.save_to_table(
+        'tables/', 
+        name=f"exp_{args.name}",
+        model=args.model,
+        dataset=args.dataset,
+        trained=args.trained_model,
+        restarts=args.restarts,
+        OPTIM=args.optim,
+        cost_fn=args.cost_fn,
+        weights=args.weights,
+        tv=args.tv,
+        rec_loss=stats["opt"],
+        psnr_mean=psnr_mean,
+        mse_mean=mse_mean,
+        ssim_mean=ssim_mean,
+        psnr_std=psnr_std,
+        mse_std=mse_std,
+        ssim_std=ssim_std,
+
+        target_id = args.index,
+        epochs=config['epochs'],
+        expid = args['exp-id']
+    )
 
 
 
 
-    # subimage_size = int(config['epochs']/config['interval'])
-    # # save image
-    # for i in range(args.bs):
-    #     plt.figure(figsize=(30, 30))
-    #     plt.imshow(tt(history[-1][i]))
-    #     plt.savefig("images/"+str(i)+"_whole.jpg")
-    #     plt.close()
 
-    #     plt.figure(figsize=(30, 20))
-    #     for j in range(subimage_size): # default = 30            
-    #         plt.subplot(int(subimage_size/10), 10, j+1)
-    #         plt.imshow(tt(history[j][i]))
-    #         # plt.title("iter=%d" % (i * 100))
-    #         # plt.axis('off')      
-    #     plt.savefig("images/"+str(i)+".jpg")
-    #     plt.close() 
-        
 
 
 

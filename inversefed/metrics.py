@@ -1,6 +1,8 @@
 """This is code based on https://sudomake.ai/inception-score-explained/."""
 import torch
 import torchvision
+import numpy as np
+import cv2
 
 from collections import defaultdict
 
@@ -104,3 +106,5 @@ def activation_errors(model, x1, x2):
         raise
 
     return data
+
+

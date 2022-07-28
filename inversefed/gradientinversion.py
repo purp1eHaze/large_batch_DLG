@@ -1,12 +1,11 @@
 """Mechanisms for image reconstruction from parameter gradients."""
-
 import torch
 import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel as DDP
 from collections import defaultdict, OrderedDict
+from functools import partial
 from .metrics import total_variation as TV
 from copy import deepcopy
-
 
 import time
 
@@ -20,33 +19,6 @@ imsize_dict = {
 save_interval=100
 construct_group_mean_at = 500
 construct_gm_every = 100
-DEFAULT_CONFIG = dict(signed=False,
-                      cost_fn='sim',
-                      indices='def',
-                      weights='equal',
-                      lr=0.1,
-                      optim='adam',
-                      restarts=1,
-                      epochs=4800,
-                      total_variation=1e-1,
-                      bn_stat=1e-1,
-                      image_norm=1e-1,
-                      group_lazy=1e-1,
-                      init='randn',
-                      lr_decay=True,
-                      dataset='CIFAR10',
-                      gen_dataset='',
-                      )
-
-def _validate_config(config):
-    for key in DEFAULT_CONFIG.keys():
-        if config.get(key) is None:
-            config[key] = DEFAULT_CONFIG[key]
-    for key in config.keys():
-        if DEFAULT_CONFIG.get(key) is None:
-            raise ValueError(f'Deprecated key in config dict: {key}!')
-    return config
-
 
 class BNStatisticsHook():
     '''
@@ -57,6 +29,8 @@ class BNStatisticsHook():
         self.hook = module.register_forward_hook(self.hook_fn)
 
     def hook_fn(self, module, input, output):
+        # print("-------------")
+
         # hook co compute deepinversion's feature distribution regularization
         nch = input[0].shape[1]
         mean = input[0].mean([0, 2, 3])
@@ -78,9 +52,9 @@ class BNStatisticsHook():
 class GradientReconstructor():
     """Instantiate a reconstruction algorithm."""
 
-    def __init__(self, model, mean_std=(0.0, 1.0), config=DEFAULT_CONFIG, num_images=1, bn_prior=((0.0, 1.0))):
+    def __init__(self, model, mean_std=(0.0, 1.0), config=dict(), num_images=1, bn_prior=[]):
         """Initialize with algorithm setup."""
-        self.config = _validate_config(config)
+        self.config = config
         self.model = model
         self.device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
         self.num_gpus = torch.cuda.device_count() if torch.cuda.is_available() else 0
@@ -91,10 +65,12 @@ class GradientReconstructor():
 
         #BN Statistics
         self.bn_layers = []
+ 
         if self.config['bn_stat'] > 0:
             for module in model.modules():
                 if isinstance(module, nn.BatchNorm2d):
                     self.bn_layers.append(BNStatisticsHook(module))
+    
         self.bn_prior = bn_prior
         
         #Group Regularizer
@@ -105,17 +81,15 @@ class GradientReconstructor():
         self.iDLG = True
 
     def reconstruct(self, input_data, labels, img_shape=(3, 32, 32), dryrun=False, eval=True, tol=None):
+
         """Reconstruct image from gradient."""
         start_time = time.time()
         if eval:
             self.model.eval()
 
-        if torch.is_tensor(input_data[0]):
-            input_data = [input_data]
-        self.image_size = img_shape[1]
-        
         stats = defaultdict(list)
         x = self._init_images(img_shape)
+     
         scores = torch.zeros(self.config['restarts'])
 
         if labels is None:
@@ -140,86 +114,80 @@ class GradientReconstructor():
         try:
             # labels = [None for _ in range(self.config['restarts'])]
             
-            optimizer = [None for _ in range(self.config['restarts'])]
-            scheduler = [None for _ in range(self.config['restarts'])]
-            _x = [None for _ in range(self.config['restarts'])]
             epochs = self.config['epochs']
-
-            for trial in range(self.config['restarts']):
-                _x[trial] = x[trial]
-
-                _x[trial].requires_grad = True
-                if self.config['optim'] == 'adam':
-                    optimizer[trial] = torch.optim.Adam([_x[trial]], lr=self.config['lr'])
-                elif self.config['optim'] == 'sgd':  # actually gd
-                    optimizer[trial] = torch.optim.SGD([_x[trial]], lr=0.01, momentum=0.9, nesterov=True)
-                elif self.config['optim'] == 'LBFGS':
-                    optimizer[trial] = torch.optim.LBFGS([_x[trial]])
-                else:
-                    raise ValueError()
-
-                if self.config['lr_decay']:
-                    scheduler[trial] = torch.optim.lr_scheduler.MultiStepLR(optimizer[trial],
-                                                                        milestones=[epochs // 2.667, epochs // 1.6,
-
-                                                                                    epochs // 1.142], gamma=0.1)   # 3/8 5/8 7/8
             dm, ds = self.mean_std
             
-            
-            for iteration in range(epochs):
-                for trial in range(self.config['restarts']):
-                    losses = [0,0,0]
-                    # x_trial = _x[trial]
-                    # x_trial.requires_grad = True
-                    
+            for trial in range(self.config['restarts']):
+                x_trial = x[trial]
+                x_trial.requires_grad_(True)
+
+                if self.config['optim'] == 'adam':
+                    optimizer = torch.optim.Adam([x_trial], lr=self.config['lr'])
+                elif self.config['optim'] == 'sgd':  # actually gd
+                    optimizer = torch.optim.SGD([x_trial], lr=0.01, momentum=0.9, nesterov=True)
+                elif self.config['optim'] == 'LBFGS':
+                    optimizer = torch.optim.LBFGS([x_trial])
+
+                if self.config['lr_decay']:
+                    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
+                                                                        milestones=[epochs // 2.667, epochs // 1.6,
+
+                                                                                    epochs // 1.142], gamma=0.1)   # 3/8 5/8 7/8    
+                for iteration in range(epochs):
+                    losses = [0,0,0,0]
+                   
                     #Group Regularizer
                     if trial == 0 and iteration + 1 == construct_group_mean_at and self.config['group_lazy'] > 0:
+                        print("conduct")
                         self.do_group_mean = True
-                        self.group_mean = torch.mean(torch.stack(_x), dim=0).detach().clone()
+                        self.group_mean = torch.mean(torch.stack(x), dim=0).detach().clone()
 
                     if self.do_group_mean and trial == 0 and (iteration + 1) % construct_gm_every == 0:
                         print("construct group mean")
-                        self.group_mean = torch.mean(torch.stack(_x), dim=0).detach().clone()
-               
-                    # print(x_trial)
-                    closure = self._gradient_closure(optimizer[trial], _x[trial], input_data, labels, losses)
-                    rec_loss = optimizer[trial].step(closure)
+                        self.group_mean = torch.mean(torch.stack(x), dim=0).detach().clone()
+
+                    
+                    closure = self._gradient_closure(optimizer, x_trial, input_data, labels, losses)
+
+                    rec_loss = optimizer.step(closure)
                     if self.config['lr_decay']:
-                        scheduler[trial].step()
+                        scheduler.step()
 
                     with torch.no_grad():
                         # Project into image space
-                        _x[trial].data = torch.max(torch.min(_x[trial], (1 - dm) / ds), -dm / ds)
-
+                        if self.config['normalized']:
+                            x_trial.data = torch.max(torch.min(x_trial, (1 - dm) / ds), -dm / ds)
+                        
                         if (iteration + 1 == epochs) or iteration % save_interval == 0:
                             print(f'It: {iteration}. Rec. loss: {rec_loss.item():2.4E} | tv: {losses[0]:7.4f} | bn: {losses[1]:7.4f} | l2: {losses[2]:7.4f} | gr: {losses[3]:7.4f}')
-
-                    if dryrun:
-                        break
 
         except KeyboardInterrupt:
             print(f'Recovery interrupted manually in iteration {iteration}!')
             pass
+
+        return x_trial.detach(), stats
+        scores[trial] = self._score_trial(x_trial, input_data, labels)
+        x[trial] = x_trial
+
         
+        # for trial in range(self.config['restarts']):
+        #     x_trial = x[trial].detach()
+        #     scores[trial] = self._score_trial(x_trial, input_data, labels)
+        #     if tol is not None and scores[trial] <= tol:
+        #         break
+        #     if dryrun:
+        #         break
 
-        for trial in range(self.config['restarts']):
-            x[trial] = _x[trial].detach()
-            scores[trial] = self._score_trial(x[trial], input_data, labels)
-            if tol is not None and scores[trial] <= tol:
-                break
-            if dryrun:
-                break
+        # # Choose optimal result:
+        # print('Choosing optimal result ...')
+        # scores = scores[torch.isfinite(scores)]  # guard against NaN/-Inf scores?
+        # optimal_index = torch.argmin(scores)
+        # print(f'Optimal result score: {scores[optimal_index]:2.4f}')
+        # stats['opt'] = scores[optimal_index].item()
+        # x_optimal = x[optimal_index]
 
-        # Choose optimal result:
-        print('Choosing optimal result ...')
-        scores = scores[torch.isfinite(scores)]  # guard against NaN/-Inf scores?
-        optimal_index = torch.argmin(scores)
-        print(f'Optimal result score: {scores[optimal_index]:2.4f}')
-        stats['opt'] = scores[optimal_index].item()
-        x_optimal = x[optimal_index]
-
-        print(f'Total time: {time.time()-start_time}.')
-        return x_optimal.detach(), stats
+        # print(f'Total time: {time.time()-start_time}.')
+        # return x_optimal.detach(), stats
 
 
     def _init_images(self, img_shape):
@@ -235,73 +203,66 @@ class GradientReconstructor():
     def _gradient_closure(self, optimizer, x_trial, input_gradient, label, losses):
 
         def closure():
-            num_images = label.shape[0]
-            num_gradients = len(input_gradient)
-            batch_size = num_images // num_gradients
-            num_batch = num_images // batch_size
-
-            total_loss = 0
             optimizer.zero_grad()
             self.model.zero_grad()
-            for i in range(num_batch):
-                start_idx = i * batch_size
-                end_idx = start_idx + batch_size
-                batch_input = x_trial[start_idx:end_idx]
-                batch_label = label[start_idx:end_idx]
-                loss = self.loss_fn(self.model(batch_input), batch_label)
-                gradient = torch.autograd.grad(loss, self.model.parameters(), create_graph=True)
-                rec_loss = reconstruction_costs([gradient], input_gradient[i],
-                                                cost_fn=self.config['cost_fn'], indices=self.config['indices'],
-                                                weights=self.config['weights'])
+        
+            loss = self.loss_fn(self.model(x_trial), label)
+            gradient = torch.autograd.grad(loss, self.model.parameters(), create_graph=True)
+            if self.config['bn_stat'] > 0:
+                rec_loss = 1e-6 * reconstruction_costs([gradient], input_gradient,
+                                            cost_fn=self.config['cost_fn'], indices=self.config['indices'],
+                                            weights=self.config['weights'])
+            else:
+                rec_loss = reconstruction_costs([gradient], input_gradient,
+                                            cost_fn=self.config['cost_fn'], indices=self.config['indices'],
+                                            weights=self.config['weights'])
 
-                if self.config['total_variation'] > 0:
-                    tv_loss = TV(x_trial)
-                    rec_loss += self.config['total_variation'] * tv_loss
-                    losses[0] = tv_loss
-                if self.config['bn_stat'] > 0:
-                    bn_loss = 0
-                    first_bn_multiplier = 10.
-                    rescale = [first_bn_multiplier] + [1. for _ in range(len(self.bn_layers)-1)]
-                    for i, (my, pr) in enumerate(zip(self.bn_layers, self.bn_prior)):
-                        bn_loss += rescale[i] * (torch.norm(pr[0] - my.mean_var[0], 2) + torch.norm(pr[1] - my.mean_var[1], 2))
-                    rec_loss += self.config['bn_stat'] * bn_loss
-                    losses[1] = bn_loss
-                if self.config['image_norm'] > 0:
-                    norm_loss = torch.norm(x_trial, 2) / (imsize_dict[self.config['dataset']] ** 2)
-                    rec_loss += self.config['image_norm'] * norm_loss
-                    losses[2] = norm_loss
-                if self.do_group_mean and self.config['group_lazy'] > 0:
-                    group_loss =  torch.norm(x_trial - self.group_mean, 2) / (imsize_dict[self.config['dataset']] ** 2)
-                    rec_loss += self.config['group_lazy'] * group_loss
-                    losses[3] = group_loss
-                total_loss += rec_loss
-            total_loss.backward()
-            return total_loss
+            if self.config['total_variation'] > 0:
+                tv_loss = TV(x_trial)
+                rec_loss += self.config['total_variation'] * tv_loss
+                losses[0] = tv_loss
+            
+            # print(len(self.bn_prior))
+
+            if self.config['bn_stat'] > 0:
+                bn_loss = 0
+                first_bn_multiplier = 10.
+                rescale = [first_bn_multiplier] + [1. for _ in range(len(self.bn_layers)-1)]
+
+                for i, (my, pr) in enumerate(zip(self.bn_layers, self.bn_prior)):
+                    bn_loss += rescale[i] * (torch.norm(pr[0] - my.mean_var[0], 2) + torch.norm(pr[1] - my.mean_var[1], 2))
+                rec_loss += self.config['bn_stat'] * bn_loss
+                losses[1] = bn_loss
+
+            if self.config['image_norm'] > 0:
+                norm_loss = torch.norm(x_trial, 2) / (imsize_dict[self.config['dataset']] ** 2)
+                rec_loss += self.config['image_norm'] * norm_loss
+                losses[2] = norm_loss
+            if self.do_group_mean and self.config['group_lazy'] > 0:
+                group_loss =  torch.norm(x_trial - self.group_mean, 2) / (imsize_dict[self.config['dataset']] ** 2)
+                rec_loss += self.config['group_lazy'] * group_loss
+                losses[3] = group_loss
+            
+            rec_loss.backward()
+            x_trial.grad.sign_()
+    
+            return rec_loss
         return closure
 
     def _score_trial(self, x_trial, input_gradient, label):
-        num_images = label.shape[0]
-        num_gradients = len(input_gradient)
-        batch_size = num_images // num_gradients
-        num_batch = num_images // batch_size
+     
+        self.model.zero_grad()
+        x_trial.grad = None
 
-        total_loss = 0
-        for i in range(num_batch):
-            self.model.zero_grad()
-            x_trial.grad = None
-
-            start_idx = i * batch_size
-            end_idx = start_idx + batch_size
-            batch_input = x_trial[start_idx:end_idx]
-            batch_label = label[start_idx:end_idx]
-            loss = self.loss_fn(self.model(batch_input), batch_label)
-            gradient = torch.autograd.grad(loss, self.model.parameters(), create_graph=False)
-            rec_loss = reconstruction_costs([gradient], input_gradient[i],
-                                    cost_fn=self.config['cost_fn'], indices=self.config['indices'],
-                                    weights=self.config['weights'])
-            total_loss += rec_loss
-        return total_loss
-
+        batch_input = x_trial
+        batch_label = label
+        loss = self.loss_fn(self.model(batch_input), batch_label)
+        gradient = torch.autograd.grad(loss, self.model.parameters(), create_graph=False)
+        rec_loss = reconstruction_costs([gradient], input_gradient,
+                                cost_fn=self.config['cost_fn'], indices=self.config['indices'],
+                                weights=self.config['weights'])
+            
+        return rec_loss
 
 def reconstruction_costs(gradients, input_gradient, cost_fn='l2', indices='def', weights='equal'):
     """Input gradient is given data."""
@@ -337,6 +298,7 @@ def reconstruction_costs(gradients, input_gradient, cost_fn='l2', indices='def',
         weights = weights.softmax(dim=0)
         weights = weights / weights[0]
     else:
+
         weights = input_gradient[0].new_ones(len(input_gradient))
 
     total_costs = 0
@@ -354,7 +316,7 @@ def reconstruction_costs(gradients, input_gradient, cost_fn='l2', indices='def',
                 costs += ((trial_gradient[i] - input_gradient[i]).abs()).max() * weights[i]
             elif cost_fn == 'gaussian':
                 l2 = (trial_gradient[i] - input_gradient[i]).pow(2).sum()
-                sigma = torch.var(input_gradient[i]) * torch.var(input_gradient[i])
+                sigma = torch.var(input_gradient[i]) 
                 costs += (1 - torch.exp(-l2/sigma)) * weights[i]
 
             elif cost_fn == 'sim':
@@ -366,7 +328,7 @@ def reconstruction_costs(gradients, input_gradient, cost_fn='l2', indices='def',
                                                                 input_gradient[i].flatten(),
                                                                 0, 1e-10) * weights[i]
 
-        if cost_fn.startswith('sim'):
+        if cost_fn == 'sim':
             costs = 1 + costs / pnorm[0].sqrt() / pnorm[1].sqrt()
 
         # Accumulate final costs

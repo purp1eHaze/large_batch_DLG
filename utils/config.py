@@ -15,6 +15,8 @@ def Setup_Config(args):
         config == GC_Config(args)
     if args.optim == "gaussian":
         config = Gaussian_Config(args)
+    if args.optim == "Zhu":
+        config = Zhu_Config(args)
     return config
 
 def LBFGS_Config(args): 
@@ -69,7 +71,12 @@ def Geiping_Config(args):
             restarts=1, #args.restarts,
             epochs= 10000,
             interval= 500,
+            #total_variation= 0,
             total_variation=1e-4, #args.tv,
+            bn_stat=0,
+            image_norm=0,
+            group_lazy=0,
+
             avg_type = "median",
             init="randn",
             filter="none",
@@ -89,6 +96,10 @@ def Zhu_Config(args):
                 epochs= 300,
                 interval= 10,
                 total_variation=0,
+                bn_stat=0,
+                image_norm=0,
+                group_lazy=0,
+
                 init="randn",
                 filter="none",
                 lr_decay=False,
@@ -101,13 +112,17 @@ def Gaussian_Config(args):
                 cost_fn="gaussian",
                 indices="def",
                 weights="equal",
-                lr=1,
+                lr= 1,
                 optim="LBFGS",
                 normalized = False,
                 restarts=1,
-                epochs= 300,
-                interval= 10,
+                epochs= 10000,
+                interval= 100,
                 total_variation=0,
+                #total_variation=1e-4,
+                bn_stat=0,
+                image_norm=0,
+                group_lazy=0,
                 init="randn",
                 filter="none",
                 lr_decay=False,
@@ -122,12 +137,12 @@ def BN_Config(args):
                 weights='equal',
                 lr=0.1,
                 optim='adam',
-                normalized = False,
+                normalized = True,
                 restarts=1,
                 epochs= 6000,
                 interval= 500,
-                total_variation=1e-1,
-                bn_stat=1e-1,
+                total_variation=0.0001,
+                bn_stat=0.1,
                 image_norm=0,
                 group_lazy=0,
                 init='randn',

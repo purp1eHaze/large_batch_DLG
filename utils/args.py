@@ -29,7 +29,7 @@ def parser_args():
                         help="TV loss parameter for dlg")
 
     parser.add_argument('--optim', type=str, default='sgd',
-                        help='optimizer: [sgd, adam, LBFGS, geiping]')
+                        help='optimizer: [sgd, adam, LBFGS, geiping, gaussian, GC, BN, Zhu]')
 
     # ============================ Model arguments ===================================
     parser.add_argument('--model', type=str, default='alexnet', choices=['alexnet', 'resnet', 'lenet'],

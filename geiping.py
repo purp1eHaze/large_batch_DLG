@@ -6,6 +6,8 @@ import torchvision
 import numpy as np
 from PIL import Image
 import inversefed
+from inversefed.reconstruction_algorithms import GradientReconstructor
+from inversefed.test_grad import GradientReconstructor_test
 import datetime
 import time
 import os
@@ -68,27 +70,31 @@ if __name__ == "__main__":
             net = AlexNet_Cifar(num_classes=num_classes, input_size = input_size).to(**setup)
     if args.model == "resnet":
         if args.dataset == "imagenet":
-            #net_ = torchvision.models.resnet18(True)
+            net = torchvision.models.resnet18(True)
             #print(net_)
             #net = ResNet18(num_classes=num_classes, imagenet = True).to(**setup)
             #print(net)
-            net = torchvision.models.resnet18(num_classes =20, pretrained=False).to(**setup)
+            #net = torchvision.models.resnet18(num_classes =20, pretrained=False).to(**setup)
         else:
             net = ResNet18(num_classes=num_classes, imagenet = False).to(**setup)
     model = net 
     model.to(**setup)
-    print(next(model.parameters()).dtype)
+    
     model.eval()
 
     # Sanity check: Validate model accuracy
     # Choose example images from the validation set or from third-party sources
     target_id = args.target_id +  args.num_images
-    print(target_id)
+
  
     if args.num_images == 1:
         ground_truth, labels = local_train_ldr.dataset[target_id]
       
         ground_truth, labels = ground_truth.unsqueeze(0).to(**setup), torch.as_tensor((labels,), device=setup['device'])
+        ground_truth = torch.as_tensor(
+                np.array(Image.open("auto.jpg").resize((224, 224), Image.BICUBIC)) / 255, device ="cuda", dtype=torch.float
+            )
+        ground_truth = ground_truth.permute(2, 0, 1).sub(dm).div(ds).unsqueeze(0).contiguous()
         target_id_ = target_id + 1
     else:
         ground_truth, labels = [], []
@@ -102,7 +108,7 @@ if __name__ == "__main__":
 
         ground_truth = torch.stack(ground_truth)
         labels = torch.cat(labels)
-    print(ground_truth.dtype)
+
       
     img_shape = (3, ground_truth.shape[2], ground_truth.shape[3])
 
@@ -137,6 +143,7 @@ if __name__ == "__main__":
     if args.accumulation == 0:
         model.zero_grad()
         loss_fn = Classification() 
+
         target_loss, _, _ = loss_fn(model(ground_truth), labels)
         input_gradient = torch.autograd.grad(target_loss, model.parameters())
         input_gradient = [grad.detach() for grad in input_gradient]
@@ -177,9 +184,32 @@ if __name__ == "__main__":
                 lr_decay=False,
                 scoring_choice=args.scoring_choice,
             )
-     
-        rec_machine = inversefed.GradientReconstructor(model, (dm, ds), config, num_images=args.num_images)
+
+        config = dict( 
+            signed = True, 
+            boxed = True, 
+            cost_fn = "sim", 
+            lr = 0.1, 
+            indices = 'def', 
+            weights = 'equal', 
+            optim = 'adam', 
+            normalized = True, 
+            restarts = 1, 
+            epochs = 10000, 
+            interval = 500, 
+            total_variation = 0.0001, 
+            bn_stat = 0, 
+            image_norm = 0, 
+            group_lazy = 0, 
+            avg_type = 'median', 
+            init = 'randn', 
+            filter = 'none', 
+            scoring_choice = 'loss', 
+            lr_decay = True)
         
+        rec_machine = inversefed.GradientReconstructor(model, (dm, ds), config, num_images=args.num_images)
+      
+        # rec_machine = GradientReconstructor_test(model, (dm, ds), config, num_images=args.num_images)
         output, stats = rec_machine.reconstruct(input_gradient, labels, img_shape=img_shape, dryrun=args.dryrun)
 
     # else:

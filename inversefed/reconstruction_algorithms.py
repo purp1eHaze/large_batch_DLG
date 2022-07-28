@@ -281,7 +281,6 @@ class GradientReconstructor():
                 
                 rec_loss = optimizer.step(closure)
 
-                print(optimizer.state_dict()['state'])
                 #print(optimizer.state_dict()['param_groups'])    
                 
                 if self.config['lr_decay']:
@@ -316,8 +315,7 @@ class GradientReconstructor():
             optimizer.zero_grad()
             self.model.zero_grad()
             loss = self.loss_fn(self.model(x_trial), label)
-            # print(label)
-            # exit()
+
             gradient = torch.autograd.grad(loss, self.model.parameters(), create_graph=True)
             rec_loss = reconstruction_costs([gradient], input_gradient,
                                             cost_fn=self.config['cost_fn'], indices=self.config['indices'],
