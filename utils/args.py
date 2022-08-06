@@ -4,7 +4,7 @@ def parser_args():
 
     parser = argparse.ArgumentParser(description='Deep Leakage from Gradients.')
 
-    parser.add_argument('--index', type=int, default="26",
+    parser.add_argument('--index', type=int, default="0",
                         help='the index for leaking images on CIFAR.')
     # parser.add_argument('--image', type=str,default="",
     #                     help='the path to customized image.')
@@ -44,7 +44,7 @@ def parser_args():
                         help="start iteration number for attack")
     parser.add_argument('--avg_type', default='avg', type=str)
 
-    parser.add_argument('--dataset', type=str, default='cifar10', choices=['cifar10', 'cifar100', 'imagenet'], help="name of dataset")
+    parser.add_argument('--dataset', type=str, default='cifar10', choices=['cifar10', 'mnist', 'imagenet'], help="name of dataset")
 
     parser.add_argument('--num_classes', default=10, type=int)
     

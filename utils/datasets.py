@@ -34,51 +34,7 @@ def get_data(dataset, data_root, normalized):
     
     if ds == 'cifar10':
     
-        normalize = transforms.Normalize(mean=[0.507, 0.487, 0.441], std=[0.267, 0.256, 0.276])
 
-        transform_train = transforms.Compose([ transforms.ToTensor()])  
-        transform_test = transforms.Compose([ transforms.ToTensor()])  
-
-        train_set = torchvision.datasets.CIFAR10(data_root,
-                                               train=True,
-                                               download=False,
-                                               transform=transform_train
-                                               )
-
-        train_set = DatasetSplit(train_set, np.arange(0, 50000))
-
-        test_set = torchvision.datasets.CIFAR10(data_root,
-                                                train=False,
-                                                download=False,
-                                                transform=transform_test
-                                                )
-    
-    if ds == 'cifar100':
-    
-        normalize = transforms.Normalize(mean=[0.507, 0.487, 0.441], std=[0.267, 0.256, 0.276])
-
-        transform_train = transforms.Compose([ transforms.ToTensor()])  
-        transform_test = transforms.Compose([ transforms.ToTensor()])  
-
-        train_set = torchvision.datasets.CIFAR100(data_root,
-                                               train=True,
-                                               download=False,
-                                               transform=transform_train
-                                               )
-
-        train_set = DatasetSplit(train_set, np.arange(0, 50000))
-
-        test_set = torchvision.datasets.CIFAR100(data_root,
-                                                train=False,
-                                                download=False,
-                                                transform=transform_test
-                                                )
-
-    if ds == "imagenet":
-
-        imagenet_root = os.path.join(data_root, 'sub-imagenet-20')
-        
-        #transform = transforms.Compose([ transforms.ToTensor()])
         if normalized == False:
             transform = transforms.Compose([
                 transforms.ToTensor(),
@@ -87,10 +43,69 @@ def get_data(dataset, data_root, normalized):
         else:
             transform = transforms.Compose([
                 transforms.ToTensor(),
+                transforms.Normalize(mean=[0.507, 0.487, 0.441], std=[0.267, 0.256, 0.276]),
+            ])    
+
+        train_set = torchvision.datasets.CIFAR10(data_root,
+                                               train=True,
+                                               download=False,
+                                               transform=transform
+                                               )
+
+        train_set = DatasetSplit(train_set, np.arange(0, 50000))
+
+        test_set = torchvision.datasets.CIFAR10(data_root,
+                                                train=False,
+                                                download=False,
+                                                transform=transform
+                                                )
+    
+    if ds == 'mnist':
+        
+        if normalized == False:
+            transform = transforms.Compose([
+                transforms.ToTensor(),
+                #transforms.Normalize([0.4802, 0.4481, 0.3975], [0.2302, 0.2265, 0.2262]),
+            ])
+        else:
+            transform = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize((0.1307), (0.3081,)),
+            ])   
+
+        train_set = torchvision.datasets.MNIST(data_root,
+                                               train=True,
+                                               download=False,
+                                               transform=transform
+                                               )
+
+        train_set = DatasetSplit(train_set, np.arange(0, 50000))
+
+        test_set = torchvision.datasets.MNIST(data_root,
+                                                train=False,
+                                                download=False,
+                                                transform=transform
+                                                )
+
+    if ds == "imagenet":
+
+        imagenet_root = os.path.join(data_root, 'imagenet20')
+        
+        #transform = transforms.Compose([ transforms.ToTensor()])
+        if normalized == False:
+            transform = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Resize([224, 224])
+                #transforms.Normalize([0.4802, 0.4481, 0.3975], [0.2302, 0.2265, 0.2262]),
+            ])
+        else:
+            transform = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Resize([224, 224]),
                 transforms.Normalize([0.4802, 0.4481, 0.3975], [0.2302, 0.2265, 0.2262]),
             ]) 
 
-        image_datasets = {x: datasets.ImageFolder(imagenet_root+ '/' + x, transform)
+        image_datasets = {x: datasets.ImageFolder(imagenet_root+ '/', transform)
                       for x in ['train', 'val', 'test']}
         train_set = image_datasets['train']
         test_set = image_datasets['test']                             

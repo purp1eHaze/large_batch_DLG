@@ -27,7 +27,7 @@ def system_startup(args=None, defs=None):
         print(f'GPU : {torch.cuda.get_device_name(device=device)}')
     return setup
 
-def save_to_table(out_dir, name, dryrun, **kwargs):
+def save_to_table(out_dir, name, **kwargs):
     """Save keys to .csv files. Function adapted from Micah."""
     # Check for file
     if not os.path.isdir(out_dir):
@@ -45,15 +45,13 @@ def save_to_table(out_dir, name, dryrun, **kwargs):
         with open(fname, 'w') as f:
             writer = csv.DictWriter(f, delimiter='\t', fieldnames=fieldnames)
             writer.writeheader()
-    if not dryrun:
+  
         # Add row for this experiment
-        with open(fname, 'a') as f:
-            writer = csv.DictWriter(f, delimiter='\t', fieldnames=fieldnames)
-            writer.writerow(kwargs)
-        print('\nResults saved to ' + fname + '.')
-    else:
-        print(f'Would save results to {fname}.')
-        print(f'Would save these keys: {fieldnames}.')
+    with open(fname, 'a') as f:
+        writer = csv.DictWriter(f, delimiter='\t', fieldnames=fieldnames)
+        writer.writerow(kwargs)
+    print('\nResults saved to ' + fname + '.')
+
 
 def set_random_seed(seed=233):
     """233 = 144 + 89 is my favorite number."""

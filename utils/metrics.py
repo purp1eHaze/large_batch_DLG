@@ -39,6 +39,21 @@ class Loss:
         raise NotImplementedError()
         return value, name, format
 
+def MSE(A, B):
+    MSE = []
+    index = []
+    
+    for j in range(A.shape[0]):
+        a = []
+        for i in range(A.shape[0]):
+            print(A[j].shape)
+            print(B[i].shape)
+            #a.append( (A[j]. - B[i].cpu()).pow(2).mean().item() )
+            a.append(np.mean( (A[j] - B[i]) ** 2))
+        MSE.append( np.mean((A[j] - B[np.argsort(a)[0]]) ** 2))
+        index.append(np.argsort(a)[0])
+
+    return MSE 
 
 class PSNR(Loss):
     """A classical MSE target.
@@ -205,16 +220,6 @@ def reconstruction_costs(gradients, input_gradient, cost_fn='l2', indices='def',
 def _tensor_size(t):
     return t.size()[1] * t.size()[2] * t.size()[3]
 
-def TVloss_l1(x):
-    batch_size = x.size()[0]
-    h_x = x.size()[2]
-    w_x = x.size()[3]
-    # count_h = _tensor_size(x[:, :, 1:, :])
-    # count_w = _tensor_size(x[:, :, :, 1:])
-    h_tv = torch.abs((x[:, :, 1:, :] - x[:, :, :h_x - 1, :])).sum()
-    w_tv = torch.abs((x[:, :, :, 1:] - x[:, :, :, :w_x - 1])).sum()
-    return torch.sum(h_tv + w_tv) / batch_size
-
 def TVloss(x):
     batch_size = x.size()[0]
     h_x = x.size()[2]
@@ -225,17 +230,7 @@ def TVloss(x):
     w_tv = torch.pow((x[:, :, :, 1:] - x[:, :, :, :w_x - 1]), 2).sum()
     return 2 * (h_tv / count_h + w_tv / count_w) / batch_size
 
-def MSE(A, B):
-    MSE = 0
-    index = []
-    for j in range(A.shape[0]):
-        a = []
-        for i in range(A.shape[0]):
-            a.append(np.mean((A[j] - B[i]) ** 2))
-        MSE += np.mean((A[j] - B[np.argsort(a)[0]]) ** 2)
-        index.append(np.argsort(a)[0])
 
-    return MSE / A.shape[0]
 
 def ssim(img1, img2):
     C1 = (0.01 * 1)**2
@@ -259,7 +254,6 @@ def ssim(img1, img2):
                                                             (sigma1_sq + sigma2_sq + C2))
     return ssim_map.mean()
  
- 
 def calculate_ssim(img1, img2):
     '''calculate SSIM
     the same outputs as MATLAB's
@@ -279,6 +273,16 @@ def calculate_ssim(img1, img2):
             return ssim(np.squeeze(img1), np.squeeze(img2))
     else:
         raise ValueError('Wrong input image dimensions.')
+
+def TVloss_l1(x):
+    batch_size = x.size()[0]
+    h_x = x.size()[2]
+    w_x = x.size()[3]
+    # count_h = _tensor_size(x[:, :, 1:, :])
+    # count_w = _tensor_size(x[:, :, :, 1:])
+    h_tv = torch.abs((x[:, :, 1:, :] - x[:, :, :h_x - 1, :])).sum()
+    w_tv = torch.abs((x[:, :, :, 1:] - x[:, :, :, :w_x - 1])).sum()
+    return torch.sum(h_tv + w_tv) / batch_size
 
 
 

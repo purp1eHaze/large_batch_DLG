@@ -1,6 +1,7 @@
 from locale import normalize
 
 def Setup_Config(args):
+
     if args.optim == "adam": 
         config = Adam_Config(args) 
     if args.optim == "LBFGS":     
@@ -12,7 +13,7 @@ def Setup_Config(args):
     if args.optim == "BN":
         config = BN_Config(args)
     if args.optim == "GC":
-        config == GC_Config(args)
+        config = GC_Config(args)
     if args.optim == "gaussian":
         config = Gaussian_Config(args)
     if args.optim == "Zhu":
@@ -26,7 +27,7 @@ def LBFGS_Config(args):
             lr=1,
             optim="LBFGS",
             normalized = False,
-            epochs=100,
+            epochs=200,
             interval= 10,
             TV_para = args.tv,
             avg_type = "median",
@@ -89,11 +90,11 @@ def Zhu_Config(args):
                 cost_fn="l2",
                 indices="def",
                 weights="equal",
-                lr=1,
+                lr= 0.1,
                 optim="LBFGS",
                 normalized = False,
                 restarts=1,
-                epochs= 300,
+                epochs= 200,
                 interval= 10,
                 total_variation=0,
                 bn_stat=0,
@@ -111,10 +112,10 @@ def Gaussian_Config(args):
                 boxed=True,
                 cost_fn="gaussian",
                 indices="def",
-                weights="equal",
-                lr= 1,
-                optim="LBFGS",
-                normalized = False,
+                weights="exp",
+                lr= 0.001,
+                optim="adam",
+                normalized = True,
                 restarts=1,
                 epochs= 10000,
                 interval= 100,
@@ -159,13 +160,13 @@ def GC_Config(args):
                 lr=0.1,
                 optim='adam',
                 normalized = False,
-                restarts=1,
+                restarts=10,
                 epochs= 6000,
                 interval= 500,
-                total_variation=1e-1,
+                total_variation=0.0001,
                 bn_stat=0,
                 image_norm=0,
-                group_lazy=1e-1,
+                group_lazy=0.01,
                 init='randn',
                 lr_decay=True,
                 dataset=args.dataset,

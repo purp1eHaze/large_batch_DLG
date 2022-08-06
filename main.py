@@ -15,16 +15,16 @@ import torchvision
 from torchvision import models, datasets, transforms
 from torch.utils.data import DataLoader
 from utils.training import local_update, test, accuracy
-from models.vision import LeNet, LeNet_Imagenet, AlexNet_Imagenet, AlexNet_Cifar, ResNet18
+from models.vision import LeNet, LeNet_mnist, AlexNet_Imagenet, AlexNet_Cifar, ResNet18
 from utils.args import parser_args
 from utils.datasets import get_data
 from utils.metrics import label_to_onehot, cross_entropy_for_onehot, TVloss, MSE, reconstruction_costs, calculate_ssim, Classification
 from utils.config import Setup_Config
 from skimage.metrics import structural_similarity as ssim
+import skimage as skimage
 
 torch.backends.cudnn.benchmark = True
 torch.backends.cudnn.deterministic = True
-
 
 def trimmed_avg(x_collection):
     x = x_collection[0].reshape((-1, 1))
@@ -72,18 +72,24 @@ if __name__ == '__main__':
         num_classes = 10
         input_size = 32
         img_shape = (3, 32, 32)
-    if args.dataset == "cifar100":
-        num_classes = 100
-        input_size = 32
-        img_shape = (3, 32, 32)
+    if args.dataset == "mnist":
+        num_classes = 10
+        input_size = 28
+        img_shape = (1, 28, 28)
 
     config = Setup_Config(args)
 
-    
     lr = config["lr"]
     # if config['normalized'] == True:
-    dm = torch.as_tensor([0.4802, 0.4481, 0.3975])[:, None, None].to(device)
-    ds = torch.as_tensor([0.2302, 0.2265, 0.2262])[:, None, None].to(device)
+    if args.dataset == "imagenet":
+        dm = torch.as_tensor([0.4802, 0.4481, 0.3975])[:, None, None].to(device)
+        ds = torch.as_tensor([0.2302, 0.2265, 0.2262])[:, None, None].to(device)
+    if args.dataset == "cifar10":
+        dm = torch.as_tensor([0.507, 0.487, 0.441])[:, None, None].to(device)
+        ds = torch.as_tensor([0.267, 0.256, 0.276])[:, None, None].to(device)
+    if args.dataset == "mnist":
+        dm = torch.as_tensor([0.1307]).to(device)
+        ds = torch.as_tensor([0.3081]).to(device)
 
     dst, test_set = get_data(dataset=args.dataset, data_root = args.data_root, normalized = config['normalized'])
     local_train_ldr = DataLoader(dst, batch_size = 32, shuffle=False, num_workers=2) 
@@ -92,8 +98,8 @@ if __name__ == '__main__':
     # prepare model 
     def get_model_fn():
         if args.model == "lenet":
-            if args.dataset == "imagenet":
-                model_fn = LeNet_Imagenet(input_size=input_size)
+            if args.dataset == "mnist":
+                model_fn = LeNet_mnist()
             else:
                 model_fn = LeNet(input_size=input_size)
         if args.model == "alexnet":
@@ -103,13 +109,13 @@ if __name__ == '__main__':
                 model_fn = AlexNet_Cifar(num_classes=num_classes, input_size = input_size)
         if args.model == "resnet":
             if args.dataset == "imagenet":
-                #model_fn = torchvision.models.resnet18(True)
+                # model_fn = torchvision.models.resnet18(True)
                 #net = ResNet18(num_classes=num_classes, imagenet = True).to(device)
                 model_fn = torchvision.models.resnet18(num_classes =10, pretrained=False)
             else:
                 model_fn = ResNet18(num_classes=num_classes, imagenet = False)
         return model_fn
-    
+
     dir = "/home/lbw/Code/model_time/"+args.model+"/"+args.dataset+"/"
 
     if args.mode == "random": 
@@ -159,12 +165,14 @@ if __name__ == '__main__':
     if args.optim in ["geiping", "BN", "GC", "gaussian", "Zhu"]:
         gt_data, gt_label = [], []
         target_id_ = args.index
+
         while len(gt_label) < args.bs:
             img, label = local_train_ldr.dataset[target_id_]
+
             target_id_ += 1
-            if label not in gt_label:
-                gt_label.append(torch.as_tensor((label,), device= "cuda"))
-                gt_data.append(img.to(device))
+            #if label not in gt_label :
+            gt_label.append(torch.as_tensor((label,), device= "cuda"))
+            gt_data.append(img.to(device))
 
         gt_data = torch.stack(gt_data)
         gt_label = torch.cat(gt_label)
@@ -173,9 +181,9 @@ if __name__ == '__main__':
         #         np.array(Image.open("auto.jpg").resize((224, 224), Image.BICUBIC)) / 255, device ="cuda", dtype=torch.float
         #     )
         # gt_data = gt_data.permute(2, 0, 1).sub(dm).div(ds).unsqueeze(0).contiguous()
-
         history = []
 
+    # Dataloader for RGIA
     else:
         gt_data = dst[img_index][0].to(device) # 0 for label, 1 for label
         gt_label = torch.Tensor([dst[img_index][1]]).long().to(device)
@@ -192,7 +200,7 @@ if __name__ == '__main__':
         # generate dummy data and label
         dummy_data = torch.rand(gt_data.size()).to(device).requires_grad_(True)
         #dummy_label = torch.rand(gt_onehot_label.size()).to(device).requires_grad_(True)
-        dummy_label = gt_onehot_label
+        dummy_label = gt_onehot_label 
 
         history = []
         x_avg = dummy_data.clone().detach()
@@ -208,7 +216,6 @@ if __name__ == '__main__':
             dy_dx = torch.autograd.grad(y, net.parameters())
             original_dy_dx.append(list((_.detach().clone().cpu() for _ in dy_dx)))
 
-
     if args.optim in ["geiping", "BN", "GC", "gaussian", "Zhu"]: #bassline 
         net.eval()
         net.zero_grad()
@@ -218,26 +225,6 @@ if __name__ == '__main__':
         for module in net.modules():
             if isinstance(module, nn.BatchNorm2d):
                 bn_l.append(inversefed.gradientinversion.BNStatisticsHook(module))
-
-        # for module in net.modules():
-        #     if isinstance(module, nn.BatchNorm2d):
-        #         def hook_fn(module, input, output):
-        #             # print("-------------")
-
-        #             # hook co compute deepinversion's feature distribution regularization
-        #             nch = input[0].shape[1]
-        #             mean = input[0].mean([0, 2, 3])
-        #             var = input[0].permute(1, 0, 2, 3).contiguous().view([nch, -1]).var(1, unbiased=False)
-
-        #             #forcing mean and variance to match between two distributions
-        #             #other ways might work better, i.g. KL divergence
-        #             # r_feature = torch.norm(module.running_var.data - var, 2) + torch.norm(
-        #             #     module.running_mean.data - mean, 2)
-        #             #mean_var = [mean.data.cpu(), var.data.cpu()]
-        #             mean_var = [mean, var]
-        #             bn_prior.append(mean_var)
-        #         hook = module.register_forward_hook(hook_fn)
-        #         hook.remove()
 
         target_loss, _, _ = loss_fn(net(gt_data), gt_label)
         input_gradient = torch.autograd.grad(target_loss, net.parameters())
@@ -251,19 +238,45 @@ if __name__ == '__main__':
 
         rec_machine = inversefed.GradientReconstructor(net, (dm, ds), config, num_images=args.bs, bn_prior=bn_prior)
         # need some reshaping 
-       
+        
         history, stats = rec_machine.reconstruct(input_gradient, gt_label, img_shape= img_shape, dryrun=False)
         
-       
+   
         if config['normalized'] == True:
-            print("------")
             history = torch.clamp(history * ds + dm, 0, 1) # denormalized
+            gt_data  = torch.clamp(gt_data * ds + dm, 0, 1)
 
         for i in range(args.bs):
             plt.figure()
             plt.imshow(tt(history[i]))
-            plt.savefig("images/"+ args.model + '_' + args.dataset + '/' + "optim_" +args.optim + "_mode_" +args.mode + "_cost_fn_" +args.cost_fn + "_" +str(i)+"_whole.png")
+            plt.savefig("images/"+ args.model + '_' + args.dataset + '/' + "optim_" +args.optim + "_mode_" +args.mode + "_iter_" + str(args.attack_iters) + "_" +str(i)+"_whole.png")
             plt.close()
+
+        test_mse, test_psnr, test_ssim = [], [], []
+
+        test_mse = MSE(history.cpu().numpy(), gt_data.cpu().numpy())
+
+        for i in range(args.bs):
+            #mse = (history[i].cpu() - gt_data[i].cpu()).pow(2).mean().item()
+            test_psnr.append(10 * math.log(1/test_mse[i], 10))
+            # calculate ssim
+            a = []
+            for j in range(args.bs):
+                if args.dataset != "mnist":
+                    a.append(ssim(history[i].cpu().numpy(), gt_data[j].cpu().numpy(), win_size=3))
+                else:  
+                    a.append(ssim(history[i].squeeze(0).cpu().numpy(), gt_data[j].squeeze(0).cpu().numpy()))
+            if args.dataset != "mnist":
+                test_ssim.append(ssim(history[i].cpu().numpy(), gt_data[np.argsort(a)[0]].cpu().numpy(), win_size=3))
+            else:  
+                test_ssim.append(ssim(history[i].squeeze(0).cpu().numpy(), gt_data[np.argsort(a)[0]].squeeze(0).cpu().numpy()))
+
+            # if args.dataset != "mnist":
+            #     test_ssim.append(ssim(history[i].cpu().numpy(), gt_data[i].cpu().numpy(), win_size=3))
+            # else:  
+            #     test_ssim.append(ssim(history[i].squeeze(0).cpu().numpy(), gt_data[i].squeeze(0).cpu().numpy()))
+
+    # Proposed RGIA
 
     else:
         for iters in range(config['epochs']): # default =300
@@ -279,7 +292,6 @@ if __name__ == '__main__':
                 
                 # load model
                 net.load_state_dict(model_time[i])
-
                 # load data
                 dummy_data = x_avg.requires_grad_(True)
                 #dummy_label = y_avg.requires_grad_(True)
@@ -307,14 +319,17 @@ if __name__ == '__main__':
                     dummy_pred = net(dummy_data)
                     dummy_loss = criterion(dummy_pred, gt_onehot_label) 
                     dummy_dy_dx = torch.autograd.grad(dummy_loss, net.parameters(), create_graph=True)
-
+                    s = 1
                     grad_diff = 0
                     if config['cost_fn'] == "l2":
                         for gx, gy in zip(dummy_dy_dx[0:], target_dy_dx[0:]):
-                            grad_diff += ((gx - gy) ** 2).sum()
+                            grad_diff += ((gx - gy) ** 2).sum() * s
+                            s += 2
+
                     if config['cost_fn'] == "sim":
                         grad_diff = reconstruction_costs(dummy_dy_dx, target_dy_dx, cost_fn="sim", indices="def", weights="equal")
-                       
+
+                    # grad_diff = grad_diff * 1e-5 
                     grad_diff.backward()
                     # tvloss = 0.01 * TVloss_l1(dummy_data) + 0.01 * TVloss(dummy_data)
                     # tvloss.backward() 
@@ -344,42 +359,73 @@ if __name__ == '__main__':
             if (iters+1) % config['interval'] == 0:  #default = 10
                 rec_mse = MSE(gt_data.cpu().detach().numpy(), dummy_data.cpu().detach().numpy())
                 tvloss = TVloss(dummy_data)
-                psnr = 10*math.log(1/rec_mse)
-                print(iters, "gradloss: %.4f"  % avg_loss, "mseloss: %.5f" % rec_mse, "tvloss: %.5f" % tvloss, "PSNR: %.2f" % psnr)
+                psnr = 10*math.log(0.1)
+                print(iters, "gradloss: %.4f"  % avg_loss, "mseloss: %.5f" % 1, "tvloss: %.5f" % tvloss, "PSNR: %.2f" % psnr)
                 if config['normalized'] == True:
                     denormal_dummy_data  = torch.clamp(dummy_data * ds + dm, 0, 1) # denormalized
-                    history.append(denormal_dummy_data.cpu())
+                    history.append(denormal_dummy_data.detach().cpu())
                 else:
-                    history.append(dummy_data.cpu())
-
+                    history.append(dummy_data.detach().cpu())
 
         for i in range(args.bs):
             plt.figure()
             plt.imshow(tt(history[-1][i]))
-            plt.savefig("images/"+ args.model + '_' + args.dataset + '/' + "optim_" +args.optim + "_mode_" +args.mode + "_cost_fn_" +args.cost_fn + "_" +str(i)+"_whole.png")
+            plt.savefig("images/"+ args.model + '_' + args.dataset + '/' + "optim_" +args.optim + "_mode_" +args.mode + "_iter_" + str(args.attack_iters) + "_" +str(i)+"_whole.png")
             plt.close()
+        # plt.figure(figsize=(12, np.sqrt(args.bs) * 8))
+        # for j in range(args.bs):
+        #     for i in range(int(config['epochs']/config['interval'])):
+        #         plt.subplot(int(config['epochs']/config['interval'] * args.bs  / 10), 10,
+        #                     int(config['epochs']/config['interval']) * j + i + 1)
+        #         plt.imshow(tt(history[i][j]))
+        #         plt.axis('off')
+        # plt.title("rec_MSE-%.4f" % (rec_mse))
+        # plt.savefig('images/' + args.model + '_' + args.dataset + '/' + args.avg_type + '_bs_' + str(
+        #     args.bs) + '_iter' + str(
+        #     args.attack_iters) + 'start_' + str(args.start_attack_iters) + "_" +args.optim + "_mode_" +args.mode + "_" +args.cost_fn + '.png')
+        # plt.close()
 
-        plt.figure(figsize=(12, np.sqrt(args.bs) * 8))
-        for j in range(args.bs):
-            for i in range(int(config['epochs']/config['interval'])):
-                plt.subplot(int(config['epochs']/config['interval'] * args.bs  / 10), 10,
-                            int(config['epochs']/config['interval']) * j + i + 1)
-                plt.imshow(tt(history[i][j]))
-                plt.axis('off')
-        plt.title("rec_MSE-%.4f" % (rec_mse))
-        plt.savefig('images/' + args.model + '_' + args.dataset + '/' + args.avg_type + '_bs_' + str(
-            args.bs) + '_iter' + str(
-            args.attack_iters) + 'start_' + str(args.start_attack_iters) + "_" +args.optim + "_mode_" +args.mode + "_" +args.cost_fn + '.png')
-        plt.close()
+        if config['normalized'] == True:
+            gt_data  = torch.clamp(gt_data * ds + dm, 0, 1)
+
+        test_mse, test_psnr, test_ssim, imgs = [], [], [], []
+
+        for i in range(args.bs):
+            imgs.append(copy.deepcopy(history[-1][i].cpu()))
+        imgs = torch.stack(imgs)
+       
+        gt_data = gt_data.cpu()
+
+        test_mse = MSE(imgs.numpy(), gt_data.numpy())
+
+        for i in range(args.bs):
+            #mse = (history[i].cpu() - gt_data[i].cpu()).pow(2).mean().item()
+            test_psnr.append(10 * math.log(1/test_mse[i], 10))
+          
+            # calculate ssim
+            a = []
+            for j in range(args.bs):
+                if args.dataset != "mnist":
+                    a.append(ssim(imgs[i].cpu().numpy(), gt_data[j].cpu().numpy(), win_size=3))
+                else:  
+                    a.append(ssim(imgs[i].squeeze(0).cpu().numpy(), gt_data[j].squeeze(0).cpu().numpy()))
+
+            if args.dataset != "mnist":
+                test_ssim.append(ssim(imgs[i].cpu().numpy(), gt_data[np.argsort(a)[0]].cpu().numpy(), win_size=3))
+            else:  
+                test_ssim.append(ssim(imgs[i].squeeze(0).cpu().numpy(), gt_data[np.argsort(a)[0]].squeeze(0).cpu().numpy()))
+        
+        # for i in range(args.bs):
+        #     mse = (history[-1][i].cpu() - gt_data[i].cpu()).pow(2).mean().item()
+        #     test_mse.append(mse)
+        #     test_psnr.append(10 * math.log(1/mse, 10))
+        #     # test_ssim = calculate_ssim(history[i], gt_data[i])
+        #     if args.dataset != "mnist":
+        #         test_ssim.append(ssim(history[-1][i].cpu().numpy(), gt_data[i].cpu().numpy(), win_size=3))
+        #     else:  
+        #         test_ssim.append(ssim(history[-1][i].squeeze(0).cpu().numpy(), gt_data[i].squeeze(0).cpu().numpy()))
 
     # save to table 
-    test_mse, test_psnr, test_ssim = [], [], []
-    for i in range(args.bs):
-        mse = (history [i].cpu() - gt_data[i].cpu()).pow(2).mean().item()
-        test_mse.append()
-        test_psnr.append(10 * math.log(1/mse, 10))
-        # test_ssim = calculate_ssim(history[i], gt_data[i])
-        test_ssim.append(ssim(history[i].cpu(), gt_data[i].cpu()))
 
     mses, psnrs, ssims = np.nan_to_num(np.array(test_mse)), np.nan_to_num(np.array(test_psnr)), np.nan_to_num(np.array(test_ssim))
     mse_mean, psnr_mean, ssim_mean = mses.mean(), psnrs.mean(), ssims.mean()
@@ -390,26 +436,23 @@ if __name__ == '__main__':
 
     inversefed.utils.save_to_table(
         'tables/', 
-        name=f"exp_{args.name}",
+        name=f"exp_{args.model}",
         model=args.model,
         dataset=args.dataset,
-        trained=args.trained_model,
-        restarts=args.restarts,
-        OPTIM=args.optim,
+        trained=args.mode,
+        restarts=args.attack_iters, # number of epochs
+        bs = args.bs, 
+        target_id = args.index,
+        optim=args.optim,
         cost_fn=args.cost_fn,
-        weights=args.weights,
+        #weights=args.weights,
         tv=args.tv,
-        rec_loss=stats["opt"],
         psnr_mean=psnr_mean,
         mse_mean=mse_mean,
         ssim_mean=ssim_mean,
         psnr_std=psnr_std,
         mse_std=mse_std,
         ssim_std=ssim_std,
-
-        target_id = args.index,
-        epochs=config['epochs'],
-        expid = args['exp-id']
     )
 
 

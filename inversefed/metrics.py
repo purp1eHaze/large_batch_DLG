@@ -32,7 +32,6 @@ class InceptionScore(torch.nn.Module):
         entropy = torch.where(prob_yx > 0, -prob_yx * prob_yx.log(), torch.zeros_like(prob_yx))
         return entropy.sum()
 
-
 def psnr(img_batch, ref_batch, batched=False, factor=1.0):
     """Standard PSNR."""
     def get_psnr(img_in, img_ref):
@@ -63,11 +62,9 @@ def total_variation(x):
     return dx + dy
 
 
-
 def activation_errors(model, x1, x2):
     """Compute activation-level error metrics for every module in the network."""
     model.eval()
-
     device = next(model.parameters()).device
 
     hooks = []

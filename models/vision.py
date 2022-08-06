@@ -19,6 +19,59 @@ def weights_init(m):
     if hasattr(m, "bias"):
         m.bias.data.uniform_(-0.5, 0.5)
 
+class LeNet_mnist(nn.Module):
+    def __init__(self):
+        super(LeNet_mnist, self).__init__()
+        self.conv1 = nn.Sequential(     #input_size=(1*28*28)
+            nn.Conv2d(1, 6, 5, 1, 2), #padding=2保证输入输出尺寸相同
+            nn.ReLU(),      #input_size=(6*28*28)
+            nn.MaxPool2d(kernel_size=2, stride=2),#output_size=(6*14*14)
+        )
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(6, 16, 5),
+            nn.ReLU(),      #input_size=(16*10*10)
+            nn.MaxPool2d(2, 2)  #output_size=(16*5*5)
+        )
+        self.fc1 = nn.Sequential(
+            nn.Linear(16 * 5 * 5, 120),
+            nn.ReLU()
+        )
+        self.fc2 = nn.Sequential(
+            nn.Linear(120, 84),
+            nn.ReLU()
+        )
+        self.fc3 = nn.Linear(84, 10)
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = x.view(x.size()[0], -1)
+        x = self.fc1(x)
+        x = self.fc2(x)
+        x = self.fc3(x)
+        return x
+
+# class LeNet_mnist(nn.Module):
+#     def __init__(self, input_size = 32):
+#         super(LeNet_mnist, self).__init__()
+#         act = nn.Sigmoid
+#         self.body = nn.Sequential(
+#             nn.Conv2d(1, 12, kernel_size=5, padding=5//2, stride=2),
+#             act(),
+#             nn.Conv2d(12, 12, kernel_size=5, padding=5//2, stride=2),
+#             act(),
+#             nn.Conv2d(12, 12, kernel_size=5, padding=5//2, stride=1),
+#             act(),
+#         )
+#         self.fc = nn.Sequential(
+#             nn.Linear(int(input_size*input_size*3/4), 10) # 768 for cifar
+#         )
+        
+#     def forward(self, x):
+#         out = self.body(x)
+#         out = out.view(out.size(0), -1)
+#         out = self.fc(out)
+#         return out
 
 class LeNet(nn.Module):
     def __init__(self, input_size = 32):

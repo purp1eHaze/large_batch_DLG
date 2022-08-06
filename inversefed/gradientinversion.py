@@ -10,10 +10,9 @@ from copy import deepcopy
 import time
 
 imsize_dict = {
-    'ImageNet': 224, 'I128':128, 'I64': 64, 'I32':32,
-    'CIFAR10':32, 'CIFAR100':32, 'FFHQ':512,
-    'CA256': 256, 'CA128': 128, 'CA64': 64, 'CA32': 32, 
-    'PERM64': 64, 'PERM32': 32,
+    'imagenet': 224, 
+    'cifar10':32, 'cifar100':32, 
+    'mnist': 28,
 }
 
 save_interval=100
@@ -89,7 +88,7 @@ class GradientReconstructor():
 
         stats = defaultdict(list)
         x = self._init_images(img_shape)
-     
+   
         scores = torch.zeros(self.config['restarts'])
 
         if labels is None:
@@ -113,50 +112,50 @@ class GradientReconstructor():
 
         try:
             # labels = [None for _ in range(self.config['restarts'])]
-            
+
+            optimizer = [None for _ in range(self.config['restarts'])]
+            scheduler = [None for _ in range(self.config['restarts'])]
+            _x = [None for _ in range(self.config['restarts'])]           
             epochs = self.config['epochs']
             dm, ds = self.mean_std
-            
+
             for trial in range(self.config['restarts']):
-                x_trial = x[trial]
-                x_trial.requires_grad_(True)
-
+                _x[trial] = x[trial]
+                _x[trial].requires_grad = True
                 if self.config['optim'] == 'adam':
-                    optimizer = torch.optim.Adam([x_trial], lr=self.config['lr'])
+                    optimizer[trial] = torch.optim.Adam([_x[trial]], lr=self.config['lr'])
                 elif self.config['optim'] == 'sgd':  # actually gd
-                    optimizer = torch.optim.SGD([x_trial], lr=0.01, momentum=0.9, nesterov=True)
+                    optimizer[trial] = torch.optim.SGD([_x[trial]], lr=0.01, momentum=0.9, nesterov=True)
                 elif self.config['optim'] == 'LBFGS':
-                    optimizer = torch.optim.LBFGS([x_trial])
-
+                    optimizer[trial] = torch.optim.LBFGS([_x[trial]])
                 if self.config['lr_decay']:
-                    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
-                                                                        milestones=[epochs // 2.667, epochs // 1.6,
+                    scheduler[trial] = torch.optim.lr_scheduler.MultiStepLR(optimizer[trial],
+                                                                        milestones=[epochs  // 2.667, epochs // 1.6,
+                                                                                    epochs // 1.142], gamma=0.1)   # 3/8 5/8 7/8
 
-                                                                                    epochs // 1.142], gamma=0.1)   # 3/8 5/8 7/8    
-                for iteration in range(epochs):
+            for iteration in range(epochs):
+                for trial in range(self.config['restarts']):
                     losses = [0,0,0,0]
-                   
                     #Group Regularizer
                     if trial == 0 and iteration + 1 == construct_group_mean_at and self.config['group_lazy'] > 0:
                         print("conduct")
                         self.do_group_mean = True
-                        self.group_mean = torch.mean(torch.stack(x), dim=0).detach().clone()
+                        self.group_mean = torch.mean(torch.stack(_x), dim=0).detach().clone()
 
                     if self.do_group_mean and trial == 0 and (iteration + 1) % construct_gm_every == 0:
                         print("construct group mean")
-                        self.group_mean = torch.mean(torch.stack(x), dim=0).detach().clone()
+                        self.group_mean = torch.mean(torch.stack(_x), dim=0).detach().clone()
 
-                    
-                    closure = self._gradient_closure(optimizer, x_trial, input_data, labels, losses)
-
-                    rec_loss = optimizer.step(closure)
+                    closure = self._gradient_closure(optimizer[trial], _x[trial], input_data, labels, losses)
+                    rec_loss = optimizer[trial].step(closure)
+                 
                     if self.config['lr_decay']:
-                        scheduler.step()
+                        scheduler[trial].step()
 
                     with torch.no_grad():
                         # Project into image space
                         if self.config['normalized']:
-                            x_trial.data = torch.max(torch.min(x_trial, (1 - dm) / ds), -dm / ds)
+                            _x[trial].data = torch.max(torch.min(_x[trial], (1 - dm) / ds), -dm / ds)
                         
                         if (iteration + 1 == epochs) or iteration % save_interval == 0:
                             print(f'It: {iteration}. Rec. loss: {rec_loss.item():2.4E} | tv: {losses[0]:7.4f} | bn: {losses[1]:7.4f} | l2: {losses[2]:7.4f} | gr: {losses[3]:7.4f}')
@@ -165,11 +164,12 @@ class GradientReconstructor():
             print(f'Recovery interrupted manually in iteration {iteration}!')
             pass
 
-        return x_trial.detach(), stats
+        return torch.mean(torch.stack(_x), dim=0).detach().clone(), stats
+        #return _x[trial].detach(), stats
         scores[trial] = self._score_trial(x_trial, input_data, labels)
         x[trial] = x_trial
 
-        
+
         # for trial in range(self.config['restarts']):
         #     x_trial = x[trial].detach()
         #     scores[trial] = self._score_trial(x_trial, input_data, labels)
@@ -201,14 +201,14 @@ class GradientReconstructor():
             raise ValueError()
 
     def _gradient_closure(self, optimizer, x_trial, input_gradient, label, losses):
-
+ 
         def closure():
             optimizer.zero_grad()
             self.model.zero_grad()
-        
             loss = self.loss_fn(self.model(x_trial), label)
             gradient = torch.autograd.grad(loss, self.model.parameters(), create_graph=True)
-            if self.config['bn_stat'] > 0:
+
+            if self.config['bn_stat'] > 0 or self.config['group_lazy'] > 0:
                 rec_loss = 1e-6 * reconstruction_costs([gradient], input_gradient,
                                             cost_fn=self.config['cost_fn'], indices=self.config['indices'],
                                             weights=self.config['weights'])
@@ -242,10 +242,13 @@ class GradientReconstructor():
                 group_loss =  torch.norm(x_trial - self.group_mean, 2) / (imsize_dict[self.config['dataset']] ** 2)
                 rec_loss += self.config['group_lazy'] * group_loss
                 losses[3] = group_loss
+
+
             
             rec_loss.backward()
             x_trial.grad.sign_()
-    
+
+
             return rec_loss
         return closure
 
