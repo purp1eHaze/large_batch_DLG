@@ -22,6 +22,7 @@ from utils.metrics import label_to_onehot, cross_entropy_for_onehot, TVloss, MSE
 from utils.config import Setup_Config
 from skimage.metrics import structural_similarity as ssim
 import skimage as skimage
+import random
 
 torch.backends.cudnn.benchmark = True
 torch.backends.cudnn.deterministic = True
@@ -65,7 +66,7 @@ if __name__ == '__main__':
     
     # prepare dataset
     if args.dataset == "imagenet":
-        num_classes = 10
+        num_classes = 20
         input_size = 224
         img_shape = (3, 224, 224)
     if args.dataset == "cifar10":
@@ -92,7 +93,7 @@ if __name__ == '__main__':
         ds = torch.as_tensor([0.3081]).to(device)
 
     dst, test_set = get_data(dataset=args.dataset, data_root = args.data_root, normalized = config['normalized'])
-    local_train_ldr = DataLoader(dst, batch_size = 32, shuffle=False, num_workers=2) 
+    local_train_ldr = DataLoader(dst, batch_size = 32, shuffle=True, num_workers=2) 
    
     model_time = []
     # prepare model 
@@ -111,7 +112,7 @@ if __name__ == '__main__':
             if args.dataset == "imagenet":
                 # model_fn = torchvision.models.resnet18(True)
                 #net = ResNet18(num_classes=num_classes, imagenet = True).to(device)
-                model_fn = torchvision.models.resnet18(num_classes =10, pretrained=False)
+                model_fn = torchvision.models.resnet18(num_classes = 20, pretrained=False)
             else:
                 model_fn = ResNet18(num_classes=num_classes, imagenet = False)
         return model_fn
@@ -166,8 +167,11 @@ if __name__ == '__main__':
         gt_data, gt_label = [], []
         target_id_ = args.index
 
+        n = len(local_train_ldr.dataset)
+
         while len(gt_label) < args.bs:
-            img, label = local_train_ldr.dataset[target_id_]
+            index = random.randint(0, n-1)
+            img, label = local_train_ldr.dataset[index]
 
             target_id_ += 1
             #if label not in gt_label :
@@ -185,18 +189,22 @@ if __name__ == '__main__':
 
     # Dataloader for RGIA
     else:
-        gt_data = dst[img_index][0].to(device) # 0 for label, 1 for label
-        gt_label = torch.Tensor([dst[img_index][1]]).long().to(device)
+        n = len(local_train_ldr.dataset)
+
+        gt_data = local_train_ldr.dataset[img_index][0].to(device) # 0 for label, 1 for label
+        gt_label = torch.Tensor([local_train_ldr.dataset[img_index][1]]).long().to(device) 
         gt_label = gt_label.view(1, )
         data_size = gt_data.size()
         gt_data = gt_data.view(1, *data_size)
         
         # batch selection to be attacked
         for i in range(args.bs-1):
-            gt_data = torch.cat([gt_data, dst[img_index+i+1][0].view(1, *data_size).to(device)], dim=0)
-            gt_label = torch.cat([gt_label, torch.Tensor([dst[img_index+i+1][1]]).long().view(1, ).to(device)], dim=0)
+            index = random.randint(0, n-1)
+            gt_data = torch.cat([gt_data, local_train_ldr.dataset[index][0].view(1, *data_size).to(device)], dim=0)
+            gt_label = torch.cat([gt_label, torch.Tensor([local_train_ldr.dataset[index][1]]).long().view(1, ).to(device)], dim=0)
         gt_onehot_label = label_to_onehot(gt_label, num_classes= num_classes)
-
+ 
+    
         # generate dummy data and label
         dummy_data = torch.rand(gt_data.size()).to(device).requires_grad_(True)
         #dummy_label = torch.rand(gt_onehot_label.size()).to(device).requires_grad_(True)
@@ -267,9 +275,9 @@ if __name__ == '__main__':
                 else:  
                     a.append(ssim(history[i].squeeze(0).cpu().numpy(), gt_data[j].squeeze(0).cpu().numpy()))
             if args.dataset != "mnist":
-                test_ssim.append(ssim(history[i].cpu().numpy(), gt_data[np.argsort(a)[0]].cpu().numpy(), win_size=3))
+                test_ssim.append(ssim(history[i].cpu().numpy(), gt_data[np.argsort(a)[-1]].cpu().numpy(), win_size=3))
             else:  
-                test_ssim.append(ssim(history[i].squeeze(0).cpu().numpy(), gt_data[np.argsort(a)[0]].squeeze(0).cpu().numpy()))
+                test_ssim.append(ssim(history[i].squeeze(0).cpu().numpy(), gt_data[np.argsort(a)[-1]].squeeze(0).cpu().numpy()))
 
             # if args.dataset != "mnist":
             #     test_ssim.append(ssim(history[i].cpu().numpy(), gt_data[i].cpu().numpy(), win_size=3))
@@ -352,8 +360,10 @@ if __name__ == '__main__':
             if config['normalized'] == True:
                 x_avg.data = torch.max(torch.min(x_avg, (1 - dm) / ds), -dm / ds)
 
-            blurrer = transforms.GaussianBlur(kernel_size=(5, 5), sigma=0.5)
-            x_avg = blurrer(x_avg)
+            if iters < int(config['epochs'] * 3/4):
+                if args.dataset == "imagenet":
+                    blurrer = transforms.GaussianBlur(kernel_size=(3, 3), sigma=0.3)
+                    x_avg = blurrer(x_avg)
             #y_avg = avg(y_collection)   
         
             if (iters+1) % config['interval'] == 0:  #default = 10
@@ -411,9 +421,9 @@ if __name__ == '__main__':
                     a.append(ssim(imgs[i].squeeze(0).cpu().numpy(), gt_data[j].squeeze(0).cpu().numpy()))
 
             if args.dataset != "mnist":
-                test_ssim.append(ssim(imgs[i].cpu().numpy(), gt_data[np.argsort(a)[0]].cpu().numpy(), win_size=3))
+                test_ssim.append(ssim(imgs[i].cpu().numpy(), gt_data[np.argsort(a)[-1]].cpu().numpy(), win_size=3))
             else:  
-                test_ssim.append(ssim(imgs[i].squeeze(0).cpu().numpy(), gt_data[np.argsort(a)[0]].squeeze(0).cpu().numpy()))
+                test_ssim.append(ssim(imgs[i].squeeze(0).cpu().numpy(), gt_data[np.argsort(a)[-1]].squeeze(0).cpu().numpy()))
         
         # for i in range(args.bs):
         #     mse = (history[-1][i].cpu() - gt_data[i].cpu()).pow(2).mean().item()

@@ -11,6 +11,8 @@ from collections import defaultdict
 from torchvision.datasets.folder import pil_loader, make_dataset, IMG_EXTENSIONS
 import skimage as skimage
 import skimage.transform as transform
+import random
+
 
 class Resize(object):
 
@@ -89,25 +91,28 @@ def get_data(dataset, data_root, normalized):
 
     if ds == "imagenet":
 
-        imagenet_root = os.path.join(data_root, 'imagenet20')
+        imagenet_root = "/home/lbw/Code/dlg-master/imgtest"
         
         #transform = transforms.Compose([ transforms.ToTensor()])
         if normalized == False:
             transform = transforms.Compose([
                 transforms.ToTensor(),
-                transforms.Resize([224, 224])
                 #transforms.Normalize([0.4802, 0.4481, 0.3975], [0.2302, 0.2265, 0.2262]),
             ])
         else:
             transform = transforms.Compose([
                 transforms.ToTensor(),
-                transforms.Resize([224, 224]),
                 transforms.Normalize([0.4802, 0.4481, 0.3975], [0.2302, 0.2265, 0.2262]),
             ]) 
 
         image_datasets = {x: datasets.ImageFolder(imagenet_root+ '/', transform)
                       for x in ['train', 'val', 'test']}
         train_set = image_datasets['train']
+
+        # n = len(train_set)  
+        #  #按比例取随机数列表
+        # train_set = torch.utils.data.Subset(train_set, n_test) 
+
         test_set = image_datasets['test']                             
     
     return train_set, test_set

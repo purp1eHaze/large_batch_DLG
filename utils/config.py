@@ -27,7 +27,7 @@ def LBFGS_Config(args):
             lr=1,
             optim="LBFGS",
             normalized = False,
-            epochs=200,
+            epochs=100,
             interval= 10,
             TV_para = args.tv,
             avg_type = "median",

@@ -46,8 +46,6 @@ def MSE(A, B):
     for j in range(A.shape[0]):
         a = []
         for i in range(A.shape[0]):
-            print(A[j].shape)
-            print(B[i].shape)
             #a.append( (A[j]. - B[i].cpu()).pow(2).mean().item() )
             a.append(np.mean( (A[j] - B[i]) ** 2))
         MSE.append( np.mean((A[j] - B[np.argsort(a)[0]]) ** 2))
